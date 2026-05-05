@@ -1,0 +1,32 @@
+{
+  "name": "balejs",
+  "version": "0.1.0",
+  "author":"Zellias",
+  "description": "TypeScript Bale userbot library",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "commonjs",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-proto.mjs",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "bale",
+    "balethon",
+    "userbot",
+    "typescript"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "protobufjs": "^7.4.0",
+    "ws": "^8.18.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "@types/ws": "^8.5.14",
+    "typescript": "^5.8.3"
+  }
+}
