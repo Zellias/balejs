@@ -1,6 +1,14 @@
 # balejs
 
-TypeScript Bale userbot library modeled on the userbot section of `Balethon-main`.
+TypeScript Bale userbot library for Node.js with a Balethon-style API.
+
+It focuses on real Bale user sessions rather than the bot API and now ships with:
+
+- interactive phone or saved-session authentication
+- websocket updates for handlers and live messaging
+- gRPC-web POST fallback for auth and selected RPC calls
+- text messaging, history, dialogs, groups, gifts, wallet, and reports
+- a growing method surface modeled after `aiobale`
 
 ## Docs
 
@@ -25,6 +33,13 @@ npm run build
 const { Client, all, private: privateChat, text } = require("./dist");
 
 const auth = process.env.BALE_SESSION || process.env.BALE_PHONE;
+
+if (!auth) {
+  throw new Error(
+    "Set BALE_PHONE to a real phone number like +989121234567, or set BALE_SESSION to an existing <userId>:<jwt> session string.",
+  );
+}
+
 const client = new Client(auth);
 
 client.on_message(all(privateChat, text))(async function echo(message) {
@@ -40,16 +55,26 @@ client.run();
 
 Use a real phone number like `+989121234567` or an existing session string in `<userId>:<jwt>` format.
 
-## Scope
+## What You Get
 
-This package is focused on Bale userbot workflows:
+- Balethon-style handlers: `on_message`, `on_command`, conditions like `all(private, text)`
+- common chat primitives: `get_chat`, `send_message`, `load_history`, `load_dialogs`
+- group flows: join, invite, edit title/about, pinned messages, selected moderation methods
+- gifts and wallet helpers: `get_wallet`, `send_gift`, `open_gift`
+- lower-level access: `invoke()` and `post()` for RPCs you want to experiment with
 
-- phone and session authentication
-- websocket updates
-- Balethon-style handlers
-- text messaging and history
-- gifts, wallet, and reports
-- selected group and file methods
+## Transport Model
+
+`balejs` uses two Bale transport paths:
+
+- websocket RPCs for normal connected client work
+- gRPC-web POST calls for authentication and HTTP fallback scenarios
+
+The gRPC-web packet layer is aligned with the `aiobale` framing model:
+
+- request payloads are wrapped with the standard 5-byte gRPC-web header
+- response payloads are cleaned before protobuf decode
+- auth and non-live RPCs can run without a persistent HTTP/2 session
 
 ## GitHub Pages
 

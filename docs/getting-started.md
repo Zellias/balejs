@@ -14,6 +14,7 @@ From the repository root:
 
 ```bash
 npm install
+npm run check
 npm run build
 ```
 
@@ -46,6 +47,19 @@ client.run();
 ```
 
 This is the same flow used in [examples/echo.js](../examples/echo.js).
+
+## How The Client Talks To Bale
+
+The library uses:
+
+- websocket RPCs after `connect()` / `run()` for normal live client work
+- gRPC-web POST requests for authentication and selected fallback RPCs
+
+That means the same client can:
+
+- prompt for phone login in the terminal
+- receive live updates over websocket
+- still perform certain non-live RPC flows without relying on an HTTP/2 socket hack
 
 ## Running
 
@@ -94,3 +108,9 @@ import { Client, text, private_ as privateChat, all } from "../dist";
 ```
 
 `private` is exported as `private_` in the source and re-exported as `private` for JavaScript usage.
+
+## Next Steps
+
+- Read [Authentication](./authentication.md) for login details.
+- Read [Handlers and Conditions](./handlers-and-conditions.md) for filters and routing.
+- Read [Client API](./client-api.md) for the full method surface.

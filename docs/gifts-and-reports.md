@@ -13,6 +13,12 @@ const wallet = await client.get_wallet();
 console.log(wallet.wallet?.balance);
 ```
 
+Alias:
+
+```js
+const wallet = await client.get_my_kifpools();
+```
+
 ## Send a Gift
 
 ```js
@@ -23,6 +29,12 @@ await client.send_gift("12345|1", 10000, "Enjoy.", {
   giving_type: GivingType.SAME,
   show_amounts: true,
 });
+```
+
+Equivalent alias:
+
+```js
+await client.send_gift_packet_with_wallet("12345|1", 10000, "Enjoy.");
 ```
 
 ## Open a Gift From a Message
@@ -36,6 +48,12 @@ client.on_message(gift)(async function handleGift(message) {
 });
 ```
 
+Equivalent alias:
+
+```js
+const result = await client.open_gift_packet(message);
+```
+
 The full example is in [examples/gift.js](../examples/gift.js).
 
 ## Gift Notes
@@ -43,6 +61,7 @@ The full example is in [examples/gift.js](../examples/gift.js).
 - sending or opening gifts requires a wallet token
 - if you do not pass a token manually, the client fetches it from `get_wallet()`
 - `message.gift` is only present for gift messages
+- the gift RPC payloads are sent through the current Bale transport wrappers, so keep the library built after local source changes
 
 ## Reports
 

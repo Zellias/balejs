@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
@@ -298,7 +298,8 @@ export class Client {
 
   async start_phone_auth(phoneNumber: string): Promise<Record<string, any>> {
     return await this.grpcConnection.request<Record<string, any>>(
-      "bale.auth.v1.Auth/StartPhoneAuth",
+      "bale.auth.v1.Auth",
+      "StartPhoneAuth",
       "request.StartPhoneAuth",
       "response.StartPhoneAuth",
       {
@@ -315,7 +316,8 @@ export class Client {
 
   async validate_code(transactionHash: string, code: string): Promise<Record<string, any>> {
     return await this.grpcConnection.request<Record<string, any>>(
-      "bale.auth.v1.Auth/ValidateCode",
+      "bale.auth.v1.Auth",
+      "ValidateCode",
       "request.ValidateCode",
       "response.Auth",
       {
@@ -330,7 +332,8 @@ export class Client {
 
   async validate_password(transactionHash: string, password: string): Promise<Record<string, any>> {
     return await this.grpcConnection.request<Record<string, any>>(
-      "bale.auth.v1.Auth/ValidatePassword",
+      "bale.auth.v1.Auth",
+      "ValidatePassword",
       "request.ValidatePassword",
       "response.Auth",
       {
@@ -345,7 +348,8 @@ export class Client {
 
   async sign_up(transactionHash: string, name: string, password?: string): Promise<Record<string, any>> {
     return await this.grpcConnection.request<Record<string, any>>(
-      "bale.auth.v1.Auth/SignUp",
+      "bale.auth.v1.Auth",
+      "SignUp",
       "request.SignUp",
       "response.Auth",
       {
@@ -354,6 +358,90 @@ export class Client {
         password: password ? { value: password } : undefined,
       },
     );
+  }
+
+  async sign_out(): Promise<DefaultResponse> {
+    const response = await this.post<Record<string, any>>(
+      "bale.auth.v1.Auth",
+      "SignOut",
+      "request.SignOut",
+      "response.DefaultResponse",
+      {},
+    );
+
+    this.session = undefined;
+    this.user = undefined;
+    this.walletCache = undefined;
+    this.walletCachePromise = undefined;
+    this.peerCache.clear();
+    this.inflightPeerLoads.clear();
+    this.inflightChatSearches.clear();
+    this.messageChatCache.clear();
+    this.messageAuthorCache.clear();
+
+    try {
+      await unlink(this.getSessionPath());
+    } catch {
+      // Ignore missing session files after sign-out.
+    }
+
+    return wrapDefaultResponse(response);
+  }
+
+  async edit_name(name: string): Promise<DefaultResponse> {
+    const response = await this.invoke<Record<string, any>>(
+      "bale.users.v1.Users",
+      "EditName",
+      "request.EditName",
+      "response.DefaultResponse",
+      {
+        name,
+      },
+    );
+
+    return wrapDefaultResponse(response);
+  }
+
+  async edit_nickname(nickname?: string): Promise<DefaultResponse> {
+    const response = await this.invoke<Record<string, any>>(
+      "bale.users.v1.Users",
+      "EditNickName",
+      "request.EditNickName",
+      "response.DefaultResponse",
+      {
+        nick_name: nickname ? { value: nickname } : undefined,
+      },
+    );
+
+    return wrapDefaultResponse(response);
+  }
+
+  async edit_about(about?: string): Promise<DefaultResponse> {
+    const response = await this.invoke<Record<string, any>>(
+      "bale.users.v1.Users",
+      "EditAbout",
+      "request.EditAbout",
+      "response.DefaultResponse",
+      {
+        about: about ? { value: about } : undefined,
+      },
+    );
+
+    return wrapDefaultResponse(response);
+  }
+
+  async check_nickname(nickname: string): Promise<boolean> {
+    const response = await this.invoke<Record<string, any>>(
+      "bale.users.v1.Users",
+      "CheckNickName",
+      "request.CheckNickName",
+      "response.CheckNickName",
+      {
+        nick_name: nickname,
+      },
+    );
+
+    return Boolean(response.available);
   }
 
   async get_me(): Promise<User> {
@@ -398,6 +486,42 @@ export class Client {
     }
   }
 
+  async load_users(users: Array<number | string>): Promise<User[]> {
+    const response = await this.invoke<Record<string, any>>(
+      "bale.users.v1.Users",
+      "LoadUsers",
+      "request.LoadUsers",
+      "response.LoadUsers",
+      {
+        user_peers: users.map((user) => this.requireUserOutPeer(user)),
+      },
+    );
+
+    return Array.isArray(response.users)
+      ? response.users.map((raw) => {
+          const wrapped = wrapUser(raw);
+          wrapped.bind(this);
+          this.peerCache.set(`${wrapped.id}|1`, wrapped);
+          return wrapped;
+        })
+      : [];
+  }
+
+  async get_full_group(chatId: string): Promise<Record<string, any> | undefined> {
+    const groupPeer = this.requireGroupPeer(chatId);
+    const response = await this.invoke<Record<string, any>>(
+      "bale.groups.v1.Groups",
+      "GetFullGroup",
+      "request.GetFullGroup",
+      "response.GetFullGroup",
+      {
+        peer: groupPeer,
+      },
+    );
+
+    return response.full_group;
+  }
+
   private async searchChat(normalizedQuery: string): Promise<User | Chat | undefined> {
     const response = await this.invoke<Record<string, any>>(
       "bale.users.v1.Users",
@@ -438,6 +562,37 @@ export class Client {
       .filter((message) => Number(message.rid) !== 0);
   }
 
+  async clear_chat(chatId: string): Promise<DefaultResponse> {
+    const peer = this.requirePeer(chatId);
+    const response = await this.invoke<Record<string, any>>(
+      "bale.messaging.v2.Messaging",
+      "ClearChat",
+      "request.ClearChat",
+      "response.DefaultResponse",
+      {
+        peer,
+      },
+    );
+
+    return wrapDefaultResponse(response);
+  }
+
+  async message_read(chatId: string, date = Date.now()): Promise<DefaultResponse> {
+    const peer = this.requirePeer(chatId);
+    const response = await this.invoke<Record<string, any>>(
+      "bale.messaging.v2.Messaging",
+      "MessageRead",
+      "request.MessageRead",
+      "response.DefaultResponse",
+      {
+        peer,
+        date,
+      },
+    );
+
+    return wrapDefaultResponse(response);
+  }
+
   async load_dialogs(limit = 40, minDate = -1, excludePinned = false): Promise<Record<string, any>> {
     return await this.invoke<Record<string, any>>(
       "bale.messaging.v2.Messaging",
@@ -465,6 +620,10 @@ export class Client {
     );
 
     return wrapDefaultResponse(response);
+  }
+
+  async typing(chatId: string, typingType = 1): Promise<DefaultResponse> {
+    return await this.start_typing(chatId, typingType);
   }
 
   async start_typing(chatId: string, typingType = 1): Promise<DefaultResponse> {
@@ -499,6 +658,37 @@ export class Client {
     return wrapDefaultResponse(response);
   }
 
+  async get_parameters(): Promise<Array<{ key: string; value: string }>> {
+    const response = await this.invoke<Record<string, any>>(
+      "bale.v1.Configs",
+      "GetParameters",
+      "request.GetParameters",
+      "response.GetParameters",
+      {},
+    );
+
+    const items = Array.isArray(response.params) ? response.params : [];
+    return items.map((item) => ({
+      key: String(item.key ?? ""),
+      value: String(item.value ?? ""),
+    }));
+  }
+
+  async edit_parameter(key: string, value?: string): Promise<DefaultResponse> {
+    const response = await this.invoke<Record<string, any>>(
+      "bale.v1.Configs",
+      "EditParameter",
+      "request.EditParameter",
+      "response.DefaultResponse",
+      {
+        key,
+        value: value !== undefined ? { value } : undefined,
+      },
+    );
+
+    return wrapDefaultResponse(response);
+  }
+
   async join_chat(tokenOrUrl: string): Promise<Chat> {
     const response = await this.invoke<Record<string, any>>(
       "bale.groups.v1.Groups",
@@ -515,6 +705,10 @@ export class Client {
     chat.bind(this);
     this.peerCache.set(`${chat.peerId}|${chat.peerType}`, chat);
     return chat;
+  }
+
+  async join_group(tokenOrUrl: string): Promise<Chat> {
+    return await this.join_chat(tokenOrUrl);
   }
 
   async join_public_chat(chatId: string): Promise<Chat> {
@@ -534,6 +728,10 @@ export class Client {
     chat.bind(this);
     this.peerCache.set(`${chat.peerId}|${chat.peerType}`, chat);
     return chat;
+  }
+
+  async join_public_group(chatId: string): Promise<Chat> {
+    return await this.join_public_chat(chatId);
   }
 
   async leave_chat(chatId: string): Promise<DefaultResponse> {
@@ -569,6 +767,10 @@ export class Client {
     return response.url;
   }
 
+  async get_group_invite_url(chatId: string): Promise<string | undefined> {
+    return await this.get_group_link(chatId);
+  }
+
   async revoke_group_link(chatId: string): Promise<string | undefined> {
     const groupPeer = this.requireGroupPeer(chatId);
     const response = await this.invoke<Record<string, any>>(
@@ -582,6 +784,10 @@ export class Client {
     );
 
     return response.url;
+  }
+
+  async revoke_invite_url(chatId: string): Promise<string | undefined> {
+    return await this.revoke_group_link(chatId);
   }
 
   async invite_users(chatId: string, userIds: number[]): Promise<Record<string, any>> {
@@ -600,6 +806,78 @@ export class Client {
         })),
       },
     );
+  }
+
+  async kick_user(chatId: string, userId: number): Promise<DefaultResponse> {
+    const groupPeer = this.requireGroupPeer(chatId);
+    const response = await this.invoke<Record<string, any>>(
+      "bale.groups.v1.Groups",
+      "KickUser",
+      "request.KickUser",
+      "response.DefaultResponse",
+      {
+        group_peer: groupPeer,
+        user: this.requireUserOutPeer(userId),
+        rid: BaleWebSocketConnection.createRid(),
+        optimizations: EMPTY_OPTIMIZATIONS,
+      },
+    );
+
+    return wrapDefaultResponse(response);
+  }
+
+  async remove_user_admin(chatId: string, userId: number): Promise<DefaultResponse> {
+    const groupPeer = this.requireGroupPeer(chatId);
+    const response = await this.invoke<Record<string, any>>(
+      "bale.groups.v1.Groups",
+      "RemoveUserAdmin",
+      "request.RemoveUserAdmin",
+      "response.DefaultResponse",
+      {
+        group_peer: groupPeer,
+        user_peer: this.requireUserOutPeer(userId),
+      },
+    );
+
+    return wrapDefaultResponse(response);
+  }
+
+  async set_member_permissions(
+    chatId: string,
+    userId: number,
+    permissions: Record<string, boolean>,
+  ): Promise<DefaultResponse> {
+    const groupPeer = this.requireGroupPeer(chatId);
+    const response = await this.invoke<Record<string, any>>(
+      "bale.groups.v1.Groups",
+      "SetMemberPermissions",
+      "request.SetMemberPermissions",
+      "response.DefaultResponse",
+      {
+        group: groupPeer,
+        user: this.requireUserOutPeer(userId),
+        permissions,
+      },
+    );
+
+    return wrapDefaultResponse(response);
+  }
+
+  async unban_user(chatId: string, userId: number): Promise<DefaultResponse> {
+    const groupPeer = this.requireGroupPeer(chatId);
+    const response = await this.invoke<Record<string, any>>(
+      "bale.groups.v1.Groups",
+      "UnBanUser",
+      "request.UnBanUser",
+      "response.DefaultResponse",
+      {
+        group_peer: groupPeer,
+        user: this.requireUserOutPeer(userId),
+        optimizations: EMPTY_OPTIMIZATIONS,
+      },
+    );
+
+    return wrapDefaultResponse(response);
   }
 
   async edit_group_title(chatId: string, title: string): Promise<DefaultResponse> {
@@ -692,6 +970,50 @@ export class Client {
     });
   }
 
+  async pin_message(chatId: string, messageId: string, justMine = false): Promise<DefaultResponse> {
+    const peer = this.requirePeer(chatId);
+    const parsedMessageId = parseMessageId(messageId);
+    const response = await this.invoke<Record<string, any>>(
+      "bale.messaging.v2.Messaging",
+      "PinMessage",
+      "request.PinMessages",
+      "response.DefaultResponse",
+      {
+        peer,
+        message_id: {
+          rid: parsedMessageId.rid,
+          date: parsedMessageId.date,
+        },
+        just_mine: justMine,
+      },
+    );
+
+    return wrapDefaultResponse(response);
+  }
+
+  async unpin_messages(chatId: string, messageIds: string[] = [], all = false): Promise<DefaultResponse> {
+    const peer = this.requireExPeer(chatId);
+    const response = await this.invoke<Record<string, any>>(
+      "bale.messaging.v2.Messaging",
+      "UnPinMessages",
+      "request.UnPinMessages",
+      "response.DefaultResponse",
+      {
+        peer,
+        message_ids: messageIds.map((messageId) => {
+          const parsedMessageId = parseMessageId(messageId);
+          return {
+            rid: parsedMessageId.rid,
+            date: parsedMessageId.date,
+          };
+        }),
+        all,
+      },
+    );
+
+    return wrapDefaultResponse(response);
+  }
+
   async pin_group_message(chatId: string, messageId: string): Promise<DefaultResponse> {
     const groupPeer = this.requireGroupPeer(chatId);
     const parsedMessageId = parseMessageId(messageId);
@@ -728,6 +1050,10 @@ export class Client {
     return wrapDefaultResponse(response);
   }
 
+  async remove_single_pin(chatId: string, messageId: string): Promise<DefaultResponse> {
+    return await this.unpin_group_message(chatId, messageId);
+  }
+
   async remove_group_pins(chatId: string): Promise<DefaultResponse> {
     const groupPeer = this.requireGroupPeer(chatId);
     const response = await this.invoke<Record<string, any>>(
@@ -743,6 +1069,10 @@ export class Client {
     return wrapDefaultResponse(response);
   }
 
+  async remove_all_pins(chatId: string): Promise<DefaultResponse> {
+    return await this.remove_group_pins(chatId);
+  }
+
   async get_file(fileId: number, accessHash: number): Promise<Record<string, any>> {
     return await this.invoke<Record<string, any>>(
       "ai.bale.server.Files",
@@ -756,6 +1086,10 @@ export class Client {
         },
       },
     );
+  }
+
+  async get_file_url(fileId: number, accessHash: number): Promise<Record<string, any>> {
+    return await this.get_file(fileId, accessHash);
   }
 
   async get_file_upload_url(
@@ -808,6 +1142,42 @@ export class Client {
     );
 
     return this.createOutboundMessage(peer, rid, response.date, messagePayload);
+  }
+
+  async get_messages_views(
+    chatId: string,
+    messageIds: Array<string | Message | OtherMessage>,
+    increment = false,
+  ): Promise<Record<string, any>> {
+    const peer = this.requirePeer(chatId);
+    return await this.invoke<Record<string, any>>(
+      "bale.abacus.v1.Abacus",
+      "GetMessagesViews",
+      "request.GetMessageViews",
+      "response.GetMessageViews",
+      {
+        peer,
+        mids: messageIds.map((message) => this.toMessageIdentifier(message)),
+        increment,
+      },
+    );
+  }
+
+  async message_set_reaction(chatId: string, messageId: string, code: string): Promise<Record<string, any>> {
+    const peer = this.requirePeer(chatId);
+    const parsedMessageId = parseMessageId(messageId);
+    return await this.invoke<Record<string, any>>(
+      "bale.abacus.v1.Abacus",
+      "MessageSetReaction",
+      "request.MessageSetReaction",
+      "response.MessageSetReaction",
+      {
+        peer,
+        rid: parsedMessageId.rid,
+        code,
+        date: parsedMessageId.date,
+      },
+    );
   }
 
   async delete_message(chatId: string, messageId: string): Promise<DefaultResponse> {
@@ -947,6 +1317,10 @@ export class Client {
     }
   }
 
+  async get_my_kifpools(): Promise<WalletResponse> {
+    return await this.get_wallet();
+  }
+
   async send_gift(
     chatId: string,
     amount: number,
@@ -992,6 +1366,20 @@ export class Client {
     return wrapDefaultResponse(response);
   }
 
+  async send_gift_packet_with_wallet(
+    chatId: string,
+    amount: number,
+    message: string,
+    options: {
+      gift_count?: number;
+      giving_type?: GivingType;
+      show_amounts?: boolean;
+      token?: string;
+    } = {},
+  ): Promise<DefaultResponse> {
+    return await this.send_gift(chatId, amount, message, options);
+  }
+
   async open_gift(message: Message, receiverToken?: string): Promise<PacketResponse> {
     const walletToken = receiverToken ?? (await this.get_wallet()).wallet?.token;
 
@@ -1017,6 +1405,10 @@ export class Client {
     );
 
     return wrapPacketResponse(response);
+  }
+
+  async open_gift_packet(message: Message, receiverToken?: string): Promise<PacketResponse> {
+    return await this.open_gift(message, receiverToken);
   }
 
   async report_chat(
@@ -1089,16 +1481,46 @@ export class Client {
     responseType: string | undefined,
     payload: object,
   ): Promise<TResponse> {
-    if (!this.websocket) {
-      throw new ClientStateError("Bale userbot is not connected");
+    if (this.websocket) {
+      return await this.websocket.request<TResponse>(
+        serviceName,
+        method,
+        requestType,
+        payload,
+        responseType,
+      );
     }
 
-    return await this.websocket.request<TResponse>(
+    return await this.post<TResponse>(
       serviceName,
       method,
       requestType,
-      payload,
       responseType,
+      payload,
+    );
+  }
+
+  async post<TResponse>(
+    serviceName: string,
+    method: string,
+    requestType: string,
+    responseType: string | undefined,
+    payload: object,
+  ): Promise<TResponse> {
+    if (!responseType) {
+      throw new ClientStateError(`A response type is required for ${serviceName}/${method}`);
+    }
+
+    const session = this.session ?? (await this.load_session());
+    return await this.grpcConnection.request<TResponse>(
+      serviceName,
+      method,
+      requestType,
+      responseType,
+      payload,
+      {
+        accessToken: session?.jwt,
+      },
     );
   }
 
@@ -1232,6 +1654,40 @@ export class Client {
     };
   }
 
+  private requireUserOutPeer(user: number | string | User): { uid: number; access_hash: number } {
+    if (user instanceof User) {
+      return {
+        uid: user.id,
+        access_hash: 1,
+      };
+    }
+
+    if (typeof user === "number") {
+      return {
+        uid: user,
+        access_hash: 1,
+      };
+    }
+
+    const parsed = parsePeerString(user);
+    if (parsed && (parsed.type === 1 || parsed.type === 4)) {
+      return {
+        uid: parsed.id,
+        access_hash: 1,
+      };
+    }
+
+    const numericUserId = Number(user);
+    if (!Number.isNaN(numericUserId) && numericUserId > 0) {
+      return {
+        uid: numericUserId,
+        access_hash: 1,
+      };
+    }
+
+    throw new TypeError(`Expected a Bale user id or user peer, received "${user}"`);
+  }
+
   private requireExPeer(chatId: string | Chat): { id: number; type: number; access_hash: number } {
     const peer = this.requirePeer(chatId);
     return {
@@ -1262,6 +1718,29 @@ export class Client {
     return {
       date: message.date,
       message_id: message.rid,
+    };
+  }
+
+  private toMessageIdentifier(message: string | Message | OtherMessage): { date: number; rid: number; seq?: number } {
+    if (typeof message === "string") {
+      const parsed = parseMessageId(message);
+      return {
+        rid: parsed.rid,
+        date: parsed.date,
+      };
+    }
+
+    if (message instanceof OtherMessage) {
+      return {
+        rid: message.message_id,
+        date: message.date,
+        seq: message.seq,
+      };
+    }
+
+    return {
+      rid: message.rid,
+      date: message.date,
     };
   }
 

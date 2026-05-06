@@ -112,6 +112,12 @@ message MessageId {
   int64 seq = 3;
 }
 
+message Reaction {
+  repeated int64 users = 1;
+  string emojy = 2;
+  Int32Value count = 3;
+}
+
 message IntroPhoto {
   FastThumb thumb = 1;
   int32 width = 2;
@@ -214,6 +220,11 @@ enum Sex {
 
 message StringValue {
   string value = 1;
+}
+
+message ExtKeyValue {
+  string key = 1;
+  string value = 2;
 }
 
 message BytesValue {

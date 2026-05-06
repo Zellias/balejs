@@ -30,6 +30,8 @@ The client will:
 3. optionally prompt for password if Bale requires it
 4. save the resulting session
 
+These auth calls use the library's gRPC-web POST transport rather than the websocket update channel.
+
 ## Session String Login
 
 A session string uses this shape:
@@ -62,6 +64,7 @@ If the file exists, `Client.connect()` tries to reuse it automatically.
 - `validate_code(transactionHash, code)`
 - `validate_password(transactionHash, password)`
 - `sign_up(transactionHash, name, password?)`
+- `sign_out()`
 - `connect()`
 - `disconnect()`
 
@@ -90,3 +93,4 @@ Raised when the client is used in an invalid state, such as trying to use websoc
 - International format like `+989...` is recommended for input clarity.
 - The client normalizes phone input before sending it to Bale.
 - For automation, reusing a saved session is usually better than repeating phone auth.
+- `sign_out()` clears the in-memory session state and is intended for explicit logout flows.

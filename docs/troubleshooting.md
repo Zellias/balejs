@@ -41,6 +41,8 @@ await client.send_message("12345|1", "hello");
 
 or register work inside `run()` lifecycle or handlers.
 
+Some methods can also use the HTTP `post()` path, but normal messaging and update-driven flows still expect a connected client.
+
 ## Handler Errors
 
 If your handler throws and you do not have an `on_error` handler, the error will bubble.
@@ -68,7 +70,7 @@ That usually means:
 Current speed work already in the library:
 
 - cached protobuf type lookup
-- persistent HTTP/2 auth connection
+- gRPC-web POST auth and fallback transport
 - websocket metadata reuse
 - pre-encoded keepalive payload
 - cached lightweight chat and author wrappers for updates

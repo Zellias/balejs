@@ -1,5 +1,3 @@
-import http2 from "node:http2";
-
 import { BaleRpcError } from "../errors";
 import { decodeMessage, encodeMessage } from "./proto";
 
@@ -11,6 +9,10 @@ export interface GrpcConnectionOptions {
   browserVersion?: string;
   osType?: string;
   userAgent?: string;
+}
+
+export interface GrpcRequestOptions {
+  accessToken?: string;
 }
 
 function normalizedTimestamp(): string {
@@ -26,8 +28,25 @@ function grpcFrame(content: Uint8Array): Buffer {
   return frame;
 }
 
-function stripGrpcFrame(content: Buffer): Buffer {
-  return content.subarray(5, 5 + content.readUInt32BE(1));
+function cleanGrpcBody(content: Uint8Array): Buffer {
+  const body = Buffer.from(content);
+  if (body.length <= 5) {
+    return Buffer.alloc(0);
+  }
+
+  const trailerTag = Buffer.from("grpc-status");
+  const trailerIndex = body.indexOf(trailerTag);
+  if (trailerIndex !== -1) {
+    return body.subarray(5, trailerIndex);
+  }
+
+  const frameLength = body.readUInt32BE(1);
+  const frameEnd = 5 + frameLength;
+  if (frameEnd <= body.length) {
+    return body.subarray(5, frameEnd);
+  }
+
+  return body.subarray(5);
 }
 
 function headerValue(value: string | string[] | number | undefined): string | undefined {
@@ -51,8 +70,7 @@ export class BaleGrpcConnection {
   readonly osType: string;
   readonly userAgent: string;
   readonly sessionId: string;
-  private readonly baseHeaders: http2.OutgoingHttpHeaders;
-  private client?: http2.ClientHttp2Session;
+  private readonly baseHeaders: Record<string, string>;
 
   constructor(options: GrpcConnectionOptions = {}) {
     this.baseUrl = options.baseUrl ?? "https://next-ws.bale.ai";
@@ -83,96 +101,47 @@ export class BaleGrpcConnection {
   }
 
   close(): void {
-    if (!this.client || this.client.closed || this.client.destroyed) {
-      this.client = undefined;
-      return;
-    }
-
-    this.client.close();
-    this.client = undefined;
+    return;
   }
 
   async request<TResponse>(
     service: string,
+    method: string,
     requestType: string,
     responseType: string,
     payload: object,
+    options: GrpcRequestOptions = {},
   ): Promise<TResponse> {
-    const client = this.getClient();
     const body = grpcFrame(encodeMessage(requestType, payload));
+    const headers = new Headers(this.baseHeaders);
 
-    try {
-      const { headers, trailers, responseBody } = await new Promise<{
-        headers: http2.IncomingHttpHeaders;
-        trailers: http2.IncomingHttpHeaders;
-        responseBody: Buffer;
-      }>((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        let responseHeaders: http2.IncomingHttpHeaders = {};
-        let responseTrailers: http2.IncomingHttpHeaders = {};
-
-        const stream = client.request({
-          ":method": "POST",
-          ":path": `/${service}`,
-          ...this.baseHeaders,
-        });
-
-        stream.on("response", (incomingHeaders) => {
-          responseHeaders = incomingHeaders;
-        });
-
-        stream.on("trailers", (incomingTrailers) => {
-          responseTrailers = incomingTrailers;
-        });
-
-        stream.on("data", (chunk: Buffer) => {
-          chunks.push(chunk);
-        });
-
-        stream.on("end", () => {
-          resolve({
-            headers: responseHeaders,
-            trailers: responseTrailers,
-            responseBody: Buffer.concat(chunks),
-          });
-        });
-
-        stream.on("error", reject);
-        stream.end(body);
-      });
-
-      const statusValue = headerValue(trailers["grpc-status"]) ?? headerValue(headers["grpc-status"]) ?? "0";
-      const status = Number(statusValue);
-
-      if (!Number.isNaN(status) && status !== 0) {
-        const message = headerValue(trailers["grpc-message"]) ?? headerValue(headers["grpc-message"]) ?? "Unknown gRPC error";
-        throw new BaleRpcError(status, message, service);
-      }
-
-      return decodeMessage<TResponse>(responseType, stripGrpcFrame(responseBody));
-    } catch (error) {
-      if (this.client && (this.client.closed || this.client.destroyed)) {
-        this.client = undefined;
-      }
-
-      throw error;
-    }
-  }
-
-  private getClient(): http2.ClientHttp2Session {
-    if (!this.client || this.client.closed || this.client.destroyed) {
-      this.client = http2.connect(this.baseUrl);
-      this.client.on("connect", () => {
-        this.client?.socket?.setNoDelay(true);
-      });
-      this.client.on("error", () => {
-        this.client = undefined;
-      });
-      this.client.on("close", () => {
-        this.client = undefined;
-      });
+    if (options.accessToken) {
+      headers.set("cookie", `access_token=${options.accessToken}`);
     }
 
-    return this.client;
+    const response = await fetch(`${this.baseUrl}/${service}/${method}`, {
+      method: "POST",
+      headers,
+      body: new Uint8Array(body),
+    });
+
+    const grpcMessage = response.headers.get("grpc-message");
+    const grpcStatusValue = headerValue(response.headers.get("grpc-status") ?? undefined) ?? "0";
+    const grpcStatus = Number(grpcStatusValue);
+
+    if (grpcMessage || (!Number.isNaN(grpcStatus) && grpcStatus !== 0)) {
+      throw new BaleRpcError(
+        Number.isNaN(grpcStatus) ? -1 : grpcStatus,
+        grpcMessage ?? `HTTP ${response.status}`,
+        `${service}/${method}`,
+      );
+    }
+
+    if (!response.ok) {
+      throw new BaleRpcError(response.status, `HTTP ${response.status}`, `${service}/${method}`);
+    }
+
+    const responseBody = cleanGrpcBody(new Uint8Array(await response.arrayBuffer()));
+    return decodeMessage<TResponse>(responseType, responseBody);
   }
 }

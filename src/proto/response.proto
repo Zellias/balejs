@@ -67,6 +67,10 @@ message LoadUsers {
   repeated struct.User users = 1;
 }
 
+message CheckNickName {
+  bool available = 1;
+}
+
 message GetFullGroup {
   struct.FullGroup full_group = 1;
 }
@@ -141,6 +145,10 @@ message GetNasimFileUrl {
   struct.FileUrlDescription file_url = 1;
 }
 
+message GetParameters {
+  repeated struct.ExtKeyValue params = 1;
+}
+
 message LoadDialogs {
   repeated struct.Group groups = 1;
   repeated struct.User users = 2;
@@ -152,6 +160,10 @@ message LoadDialogs {
 message DefaultResponse {
   int32 seq = 1;
   int64 date = 2;
+}
+
+message MessageSetReaction {
+  repeated struct.Reaction reactions = 2;
 }
 
 enum GiftOpenning {
