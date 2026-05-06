@@ -8,7 +8,6 @@ It focuses on real Bale user sessions rather than the bot API and now ships with
 - websocket updates for handlers and live messaging
 - gRPC-web POST fallback for auth and selected RPC calls
 - text messaging, history, dialogs, groups, gifts, wallet, and reports
-- a growing method surface modeled after `aiobale`
 
 ## Docs
 
@@ -70,7 +69,6 @@ Use a real phone number like `+989121234567` or an existing session string in `<
 - websocket RPCs for normal connected client work
 - gRPC-web POST calls for authentication and HTTP fallback scenarios
 
-The gRPC-web packet layer is aligned with the `aiobale` framing model:
 
 - request payloads are wrapped with the standard 5-byte gRPC-web header
 - response payloads are cleaned before protobuf decode

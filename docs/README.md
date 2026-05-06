@@ -2,7 +2,7 @@
 
 This documentation set is written as plain Markdown for GitHub browsing and GitHub Pages publishing from the `/docs` folder.
 
-`balejs` is a Bale userbot library for Node.js and TypeScript with an API designed to feel close to Balethon and informed by `aiobale`.
+`balejs` is a Bale userbot library for Node.js and TypeScript with an API designed to feel close to Balethon.
 
 ## Pages
 
