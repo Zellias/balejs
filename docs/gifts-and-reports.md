@@ -1,12 +1,10 @@
 # Gifts and Reports
 
-[Docs Home](./README.md) | [Objects and Enums](./objects-and-enums.md) | [Troubleshooting](./troubleshooting.md)
+[Docs Home](./README.md) | [Client API](./client-api.md) | [Objects and Enums](./objects-and-enums.md)
 
-## Gifts
+## Wallet
 
-Gift support is available in the userbot layer through wallet and message methods.
-
-## Read Wallet Info
+Read wallet info:
 
 ```js
 const wallet = await client.get_wallet();
@@ -19,7 +17,9 @@ Alias:
 const wallet = await client.get_my_kifpools();
 ```
 
-## Send a Gift
+The wallet token is used automatically by gift helpers when possible.
+
+## Sending Gifts
 
 ```js
 const { GivingType } = require("../dist");
@@ -31,48 +31,71 @@ await client.send_gift("12345|1", 10000, "Enjoy.", {
 });
 ```
 
-Equivalent alias:
+Aliases:
 
 ```js
 await client.send_gift_packet_with_wallet("12345|1", 10000, "Enjoy.");
+await client.send_giftpacket("12345|1", 10000, "Enjoy.");
 ```
 
-## Open a Gift From a Message
+Supported options:
 
-Incoming gift packets appear on `message.gift`.
+- `gift_count`
+- `giving_type`
+- `show_amounts`
+- `token`
+
+If `token` is omitted, the client tries to use `get_wallet().wallet?.token`.
+
+## Opening Gifts
+
+Gift packets appear on `message.gift`.
 
 ```js
-client.on_message(gift)(async function handleGift(message) {
+const { all, gift, private: privateChat } = require("../dist");
+
+client.on_message(all(gift, privateChat))(async function handleGift(message) {
   const result = await message.open_gift();
   console.log(result.status, result.win_amount);
 });
 ```
 
-Equivalent alias:
+Aliases:
 
 ```js
 const result = await client.open_gift_packet(message);
+const result2 = await client.open_packet(message);
 ```
 
-The full example is in [examples/gift.js](../examples/gift.js).
+## Gift Result Fields
+
+`PacketResponse` contains:
+
+- `receivers`
+- `status`
+- `openned_count`
+- `win_amount`
+- `rank`
+
+`status` is a `GiftOpenning` enum value.
 
 ## Gift Notes
 
-- sending or opening gifts requires a wallet token
-- if you do not pass a token manually, the client fetches it from `get_wallet()`
-- `message.gift` is only present for gift messages
-- the gift RPC payloads are sent through the current Bale transport wrappers, so keep the library built after local source changes
+- sending gifts requires a wallet token
+- opening gifts requires a wallet token
+- `message.gift` only exists on gift messages
+- `Chat.send_gift()` and `Chat.send_giftpacket()` forward to the client helpers
 
 ## Reports
 
 The library supports peer-level and message-level reports.
 
-## Report a Chat
+## Report A Chat
 
 ```js
-const { ReportKind } = require("../dist");
+const { ReportKind, PeerSource } = require("../dist");
 
-await client.report_chat("12345|1", "spam account", ReportKind.SPAM);
+await client.report_chat("12345|1", "spam account", ReportKind.SPAM, PeerSource.DIALOGS);
 ```
 
 ## Report One Message
@@ -84,25 +107,26 @@ await client.report_message(message.chat.id, message, "abuse", ReportKind.INAPPR
 ## Report Multiple Messages
 
 ```js
-await client.report_messages(message.chat.id, [message1, message2], "spam wave");
+await client.report_messages(message.chat.id, [message1, message2], "spam wave", ReportKind.SPAM);
 ```
+
+You can mix `Message` and `OtherMessage` instances inside `report_messages()`.
 
 ## Convenience Methods
 
-You can also use:
+Wrapped objects also expose:
 
-- `message.report()`
-- `chat.report()`
+- `message.report(reason?, kind?)`
+- `chat.report(reason?, kind?)`
 
 Example:
 
 ```js
 await message.report("spam", ReportKind.SPAM);
+await message.chat.report("spam wave", ReportKind.SPAM);
 ```
 
-## Reporting Enums
-
-Main report enums:
+## Report Enums
 
 - `ReportKind`
 - `PeerSource`

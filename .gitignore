@@ -34,3 +34,8 @@ Desktop.ini
 
 # Local docs output
 _site/
+
+/js/
+js/
+json/
+scripts/

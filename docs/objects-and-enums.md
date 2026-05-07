@@ -2,6 +2,8 @@
 
 [Docs Home](./README.md) | [Client API](./client-api.md) | [Gifts and Reports](./gifts-and-reports.md)
 
+This page covers the exported object wrappers and enums from `src/objects/index.ts`.
+
 ## `User`
 
 Fields:
@@ -12,7 +14,10 @@ Fields:
 - `isBot`
 - `full_name`
 
-`User` objects are returned by `get_me()` and sometimes by `get_chat()`.
+Notes:
+
+- `full_name` returns `name ?? ""`
+- `User` instances are bound to a client when they come from wrapped client methods
 
 ## `Chat`
 
@@ -33,13 +38,21 @@ Methods:
 - `send(text)`
 - `load_history(limit?, fromDate?)`
 - `send_gift(amount, message, options?)`
+- `send_giftpacket(amount, message, options?)`
 - `report(reason?, kind?)`
+
+`id` is the Bale peer id string:
+
+```text
+<id>|<type>
+```
 
 ## `Message`
 
 Fields:
 
 - `rid`
+- `message_id`
 - `date`
 - `id`
 - `author`
@@ -58,11 +71,21 @@ Methods:
 - `forward(chatId)`
 - `copy(chatId)`
 - `open_gift(receiverToken?)`
+- `open_packet(receiverToken?)`
 - `report(reason?, kind?)`
 
-## Gift Models
+Notes:
 
-### `GiftPacket`
+- `message_id` is an alias for `rid`
+- `id` is the Bale message id string:
+
+```text
+<rid>|<date>
+```
+
+- `content` returns `text ?? caption ?? ""`
+
+## `GiftPacket`
 
 Fields:
 
@@ -74,7 +97,7 @@ Fields:
 - `owner_id`
 - `show_amounts`
 
-### `Winner`
+## `Winner`
 
 Fields:
 
@@ -82,7 +105,7 @@ Fields:
 - `amount`
 - `date`
 
-### `PacketResponse`
+## `PacketResponse`
 
 Fields:
 
@@ -92,7 +115,7 @@ Fields:
 - `win_amount`
 - `rank`
 
-### `Wallet`
+## `Wallet`
 
 Fields:
 
@@ -104,7 +127,7 @@ Fields:
 - `pan`
 - `account`
 
-### `WalletResponse`
+## `WalletResponse`
 
 Fields:
 
@@ -112,16 +135,16 @@ Fields:
 - `first_name`
 - `last_name`
 
-## Other Models
-
-### `DefaultResponse`
+## `DefaultResponse`
 
 Fields:
 
 - `seq`
 - `date`
 
-### `OtherMessage`
+This is the common wrapper for Bale default responses.
+
+## `OtherMessage`
 
 Fields:
 
@@ -129,7 +152,7 @@ Fields:
 - `message_id`
 - `seq`
 
-Useful when you want to report or refer to a message without needing a full wrapped `Message`.
+Use `OtherMessage` when you want to refer to a message for reporting or view/reaction calls without needing a fully wrapped `Message`.
 
 ## Enums
 
@@ -173,3 +196,21 @@ Useful when you want to report or refer to a message without needing a full wrap
 - `VITRINE`
 - `MARKET`
 - `PRIVACY_BAR`
+
+## Helper Functions
+
+Also exported:
+
+- `peerTypeToChatType(peerType)`
+- `groupTypeToPeerType(groupType)`
+- `wrapUser(raw)`
+- `wrapGroup(raw)`
+- `wrapMessageFromUpdate(raw, context?)`
+- `wrapGiftPacket(raw)`
+- `wrapWinner(raw)`
+- `wrapPacketResponse(raw)`
+- `wrapWallet(raw)`
+- `wrapWalletResponse(raw)`
+- `wrapDefaultResponse(raw)`
+
+These helpers are mainly useful if you are working with raw decoded Bale payloads through `invoke()` or `post()`.

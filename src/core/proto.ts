@@ -2,7 +2,7 @@ import path from "node:path";
 import protobuf from "protobufjs";
 
 const conversionOptions: protobuf.IConversionOptions = {
-  longs: Number,
+  longs: String,
   bytes: Buffer,
   enums: String,
   defaults: false,

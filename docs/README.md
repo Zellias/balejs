@@ -1,8 +1,8 @@
 # balejs Docs
 
-This documentation set is written as plain Markdown for GitHub browsing and GitHub Pages publishing from the `/docs` folder.
+This is the documentation set for `balejs`, the Bale user library created by [Zellias](https://github.com/zellias).
 
-`balejs` is a Bale userbot library for Node.js and TypeScript with an API designed to feel close to Balethon.
+It documents the library as its own project and explains the API directly in `balejs` terms.
 
 ## Pages
 
@@ -14,34 +14,36 @@ This documentation set is written as plain Markdown for GitHub browsing and GitH
 - [Gifts and Reports](./gifts-and-reports.md)
 - [Troubleshooting](./troubleshooting.md)
 
-## What This Library Is
+## What `balejs` Is
 
-The core ideas are:
+`balejs` is a CommonJS-first Node.js library for working with real Bale user sessions.
+
+Core pieces:
 
 - `Client`
-- `on_message`
-- `on_command`
-- `send_message`
-- `get_chat`
-- `message.reply()`
+- message handlers
+- condition helpers
+- wrapped `User`, `Chat`, and `Message` objects
+- transport helpers for websocket RPC and gRPC-web POST
 
-It is focused on the userbot side, not the bot API side.
+## What It Covers
 
-Current strengths:
+- interactive login and saved sessions
+- live websocket updates
+- direct Bale RPC access
+- chats, groups, history, pins, avatars, files, reactions, gifts, wallet, and reports
 
-- interactive phone auth plus reusable saved sessions
-- websocket update handling
-- gRPC-web POST fallback for auth and selected RPC calls
-- gifts, wallet, reports, dialogs, groups, and selected moderation flows
+## Reading Order
 
-## Compatibility Notes
+1. [Getting Started](./getting-started.md)
+2. [Authentication](./authentication.md)
+3. [Handlers and Conditions](./handlers-and-conditions.md)
+4. [Client API](./client-api.md)
+5. [Objects and Enums](./objects-and-enums.md)
+6. [Gifts and Reports](./gifts-and-reports.md)
+7. [Troubleshooting](./troubleshooting.md)
 
-Python and JavaScript differ in two important ways:
-
-1. Python decorators like `@client.on_message()` become `client.on_message()(handler)`.
-2. Python condition chaining like `private & text` becomes `all(private, text)` or `private.and(text)`.
-
-## Quick Example
+## Minimal Example
 
 ```js
 const { Client, all, private: privateChat, text } = require("../dist");
@@ -49,7 +51,7 @@ const { Client, all, private: privateChat, text } = require("../dist");
 const auth = process.env.BALE_SESSION || process.env.BALE_PHONE;
 
 if (!auth) {
-  throw new Error("Set BALE_PHONE or BALE_SESSION before running examples.");
+  throw new Error("Set BALE_PHONE or BALE_SESSION before starting the client.");
 }
 
 const client = new Client(auth);
@@ -60,13 +62,3 @@ client.on_message(all(privateChat, text))(async function echo(message) {
 
 client.run();
 ```
-
-## Recommended Reading Order
-
-1. [Getting Started](./getting-started.md)
-2. [Authentication](./authentication.md)
-3. [Handlers and Conditions](./handlers-and-conditions.md)
-4. [Client API](./client-api.md)
-5. [Objects and Enums](./objects-and-enums.md)
-6. [Gifts and Reports](./gifts-and-reports.md)
-7. [Troubleshooting](./troubleshooting.md)

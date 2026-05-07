@@ -1,14 +1,14 @@
 # Getting Started
 
-[Docs Home](./README.md) | [Authentication](./authentication.md)
+[Docs Home](./README.md) | [Authentication](./authentication.md) | [Client API](./client-api.md)
 
 ## Requirements
 
-- Node.js with CommonJS support
-- a Bale account for userbot login
+- Node.js
+- a real Bale account
 - either a phone number or an existing Bale session string
 
-## Install
+## Install And Build
 
 From the repository root:
 
@@ -18,9 +18,9 @@ npm run check
 npm run build
 ```
 
-Your compiled library entry point is `dist/index.js`.
+The compiled entry point is `dist/index.js`.
 
-## First Echo Client
+## First Client
 
 ```js
 const { Client, all, private: privateChat, text } = require("../dist");
@@ -29,7 +29,7 @@ const auth = process.env.BALE_SESSION || process.env.BALE_PHONE;
 
 if (!auth) {
   throw new Error(
-    "Set BALE_PHONE to a real phone number like +989121234567, or set BALE_SESSION to an existing <userId>:<jwt> session string.",
+    "Set BALE_PHONE to a real Bale phone number like +989121234567, or set BALE_SESSION to an existing <userId>:<jwt> session string.",
   );
 }
 
@@ -46,40 +46,28 @@ client.on_error(async function logError(error) {
 client.run();
 ```
 
-This is the same flow used in [examples/echo.js](../examples/echo.js).
+This flow is also shown in [examples/echo.js](../examples/echo.js).
 
-## How The Client Talks To Bale
+## Constructor
 
-The library uses:
-
-- websocket RPCs after `connect()` / `run()` for normal live client work
-- gRPC-web POST requests for authentication and selected fallback RPCs
-
-That means the same client can:
-
-- prompt for phone login in the terminal
-- receive live updates over websocket
-- still perform certain non-live RPC flows without relying on an HTTP/2 socket hack
-
-## Running
-
-Use a saved session:
-
-```bash
-BALE_SESSION='123456:jwt_here' node examples/echo.js
+```js
+const client = new Client(auth, options);
 ```
 
-Or use phone auth:
+`auth` can be:
 
-```bash
-BALE_PHONE='+989121234567' node examples/echo.js
-```
+- `+989...` style phone input
+- `<userId>:<jwt>` session string
 
-If you use phone auth, the client will prompt for the Bale login code in the terminal.
+`options` supports:
 
-## Session Files
+- `sessionDir?: string`
+- `grpc?: GrpcConnectionOptions`
+- `websocket?: WebSocketConnectionOptions`
 
-By default, the client stores sessions under the current working directory:
+## Session Storage
+
+By default, sessions are written under the current working directory:
 
 ```text
 <cwd>/<token-or-phone>.session
@@ -93,24 +81,73 @@ const client = new Client(auth, {
 });
 ```
 
-## Import Patterns
+## Connection Styles
+
+### Long-running app
+
+```js
+client.run();
+```
+
+### Manual lifecycle
+
+```js
+await client.connect();
+await client.send_message("12345|1", "hello");
+await client.disconnect();
+```
+
+### Run with a task
+
+```js
+await client.run(async function main(current) {
+  const me = await current.get_me();
+  console.log(me.id);
+});
+```
+
+When `run(task)` finishes, the client stops automatically.
+
+## ID Formats
+
+Peer ids:
+
+```text
+<id>|<type>
+```
+
+Common peer types:
+
+- `1` private user
+- `2` group
+- `3` channel
+- `4` bot
+- `5` supergroup
+
+Message ids:
+
+```text
+<rid>|<date>
+```
+
+## Imports
 
 CommonJS:
 
 ```js
-const { Client, text, private: privateChat, all } = require("../dist");
+const { Client, all, text, private: privateChat } = require("../dist");
 ```
 
 TypeScript:
 
 ```ts
-import { Client, text, private_ as privateChat, all } from "../dist";
+import { Client, all, text, private_ as privateChat } from "../dist";
 ```
 
-`private` is exported as `private_` in the source and re-exported as `private` for JavaScript usage.
+The source export is `private_`. The package also re-exports it as `private` for JavaScript consumers.
 
-## Next Steps
+## Next
 
-- Read [Authentication](./authentication.md) for login details.
-- Read [Handlers and Conditions](./handlers-and-conditions.md) for filters and routing.
-- Read [Client API](./client-api.md) for the full method surface.
+- [Authentication](./authentication.md)
+- [Handlers and Conditions](./handlers-and-conditions.md)
+- [Client API](./client-api.md)

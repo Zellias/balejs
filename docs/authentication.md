@@ -1,40 +1,41 @@
 # Authentication
 
-[Docs Home](./README.md) | [Getting Started](./getting-started.md) | [Handlers and Conditions](./handlers-and-conditions.md)
+[Docs Home](./README.md) | [Getting Started](./getting-started.md) | [Troubleshooting](./troubleshooting.md)
 
-## Supported Auth Modes
+## Supported Inputs
 
-The client supports two auth inputs:
+The `Client` constructor accepts:
 
-1. phone number
-2. existing session string
+- a Bale phone number
+- a Bale session string
 
-The constructor accepts either:
+Example:
 
 ```js
 const client = new Client(process.env.BALE_SESSION || process.env.BALE_PHONE);
 ```
 
-## Phone Number Login
+## Phone Login
 
-When you pass a phone number, the client starts Bale phone auth:
+If you pass a phone number, the client performs Bale phone authentication.
+
+Typical run command:
 
 ```bash
 BALE_PHONE='+989121234567' node examples/echo.js
 ```
 
-The client will:
+Flow:
 
-1. call `StartPhoneAuth`
-2. prompt for the code
-3. optionally prompt for password if Bale requires it
-4. save the resulting session
-
-These auth calls use the library's gRPC-web POST transport rather than the websocket update channel.
+1. `connect()` or `run()` calls `start_phone_auth()`
+2. the terminal prompts for the login code
+3. if Bale requires a password, the terminal prompts for it
+4. if the account is not registered, the terminal prompts for a display name and uses `sign_up()`
+5. the resulting session is saved to disk
 
 ## Session String Login
 
-A session string uses this shape:
+A session string has this shape:
 
 ```text
 <userId>:<jwt>
@@ -48,49 +49,59 @@ BALE_SESSION='123456:eyJhbGciOi...' node examples/echo.js
 
 This skips the interactive code flow.
 
-## Session Persistence
+## Session Files
 
-When auth succeeds, the session is written to a file named after the original auth input:
+Successful authentication writes a session file here:
 
 ```text
 <sessionDir>/<token-or-phone>.session
 ```
 
-If the file exists, `Client.connect()` tries to reuse it automatically.
+By default `sessionDir` is the current working directory.
 
-## Relevant Client Methods
+## Public Auth Methods
 
 - `start_phone_auth(phoneNumber)`
 - `validate_code(transactionHash, code)`
 - `validate_password(transactionHash, password)`
 - `sign_up(transactionHash, name, password?)`
 - `sign_out()`
-- `connect()`
-- `disconnect()`
 
-These are public, but most applications should call `connect()` or `run()` and let the client manage the flow.
+Most apps should not call the low-level auth methods directly. Use `connect()` or `run()` unless you are building a custom login flow.
 
-## Common Auth Errors
+## Logout
 
-### `AuthenticationError`
+`sign_out()`:
 
-Raised when the login flow fails at the client layer.
+- calls Bale sign-out
+- clears in-memory session state
+- clears caches
+- removes the session file if it exists
 
-### `BaleRpcError`
+## Transport Notes
 
-Raised when Bale returns an RPC error such as:
+Auth methods use the gRPC-web POST transport, not the websocket transport.
+
+That matters because:
+
+- auth works before the websocket connects
+- `post()` can still be useful even if the live connection is not running
+
+## Errors You May See
+
+- `AuthenticationError`
+- `BaleRpcError`
+- `ClientStateError`
+
+Common Bale RPC messages:
 
 - `PHONE_NUMBER_INVALID`
 - `PHONE_CODE_INVALID`
+- password-related Bale RPC failures
 
-### `ClientStateError`
+## Recommended Practice
 
-Raised when the client is used in an invalid state, such as trying to use websocket methods before connecting.
-
-## Real-World Notes
-
-- Use a real Bale account phone number.
-- International format like `+989...` is recommended for input clarity.
-- The client normalizes phone input before sending it to Bale.
-- For automation, reusing a saved session is usually better than repeating phone auth.
-- `sign_out()` clears the in-memory session state and is intended for explicit logout flows.
+- use a real Bale account
+- keep phone numbers in international format
+- prefer stored sessions for repeated local development
+- delete stale `.session` files when Bale rejects an old token

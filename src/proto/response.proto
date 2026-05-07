@@ -67,6 +67,10 @@ message LoadUsers {
   repeated struct.User users = 1;
 }
 
+message LoadFullUsers {
+  repeated struct.FullUser full_users = 1;
+}
+
 message CheckNickName {
   bool available = 1;
 }

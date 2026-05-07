@@ -1,6 +1,6 @@
 # balejs Docs
 
-This documentation set is written as plain Markdown for GitHub browsing and GitHub Pages publishing from the `/docs` folder.
+This is the documentation set for `balejs`, the Bale user library created by [Zellias](https://github.com/zellias).
 
 ## Pages
 
@@ -12,25 +12,23 @@ This documentation set is written as plain Markdown for GitHub browsing and GitH
 - [Gifts and Reports](./gifts-and-reports.md)
 - [Troubleshooting](./troubleshooting.md)
 
-## What This Library Is
+## Summary
 
-`balejs` is a Bale userbot library for Node.js and TypeScript with an API shaped to feel close to Balethon:
+`balejs` is a Node.js library for real Bale user sessions. It provides:
 
 - `Client`
-- `on_message`
-- `on_command`
-- `send_message`
-- `get_chat`
-- `message.reply()`
+- message handlers and conditions
+- wrapped `User`, `Chat`, and `Message` objects
+- websocket RPC and gRPC-web POST transports
+- helpers for groups, files, gifts, wallet, reports, and direct RPC access
 
-It is focused on the userbot side, not the bot API side.
+## Start Here
 
-## Compatibility Notes
-
-Python and JavaScript differ in two important ways:
-
-1. Python decorators like `@client.on_message()` become `client.on_message()(handler)`.
-2. Python condition chaining like `private & text` becomes `all(private, text)` or `private.and(text)`.
+1. [Getting Started](./getting-started.md)
+2. [Authentication](./authentication.md)
+3. [Handlers and Conditions](./handlers-and-conditions.md)
+4. [Client API](./client-api.md)
+5. [Objects and Enums](./objects-and-enums.md)
 
 ## Quick Example
 
@@ -46,11 +44,3 @@ client.on_message(all(privateChat, text))(async function echo(message) {
 
 client.run();
 ```
-
-## Recommended Reading Order
-
-1. [Getting Started](./getting-started.md)
-2. [Authentication](./authentication.md)
-3. [Handlers and Conditions](./handlers-and-conditions.md)
-4. [Client API](./client-api.md)
-5. [Objects and Enums](./objects-and-enums.md)

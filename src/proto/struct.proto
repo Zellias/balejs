@@ -181,6 +181,13 @@ enum ExPeerType {
 
 message ExInfo {
   ExPeerType ex_peer_type = 1;
+  BoolValue identified = 2;
+}
+
+enum PrivacyMode {
+  PRIVACY_MODE_UNKNOWN = 0;
+  PRIVACY_MODE_NONE = 1;
+  PRIVACY_MODE_SPAM = 2;
 }
 
 message Int64Value {
@@ -272,6 +279,27 @@ message User {
   BotExInfo bot_ex_info = 21;
 }
 
+message ContactInfo {
+  int64 value = 3;
+  string title = 4;
+}
+
+message FullUser {
+  int32 id = 1;
+  ContactInfo contact_info = 2;
+  StringValue about = 3;
+  repeated string languages = 4;
+  StringValue timezone = 5;
+  repeated ExtKeyValue bot_commands = 6;
+  BoolValue is_blocked = 8;
+  ExInfo ex_info = 9;
+  BoolValue is_deleted = 12;
+  BoolValue is_contact = 13;
+  Int64Value created_at = 15;
+  PrivacyMode privacy_mode = 16;
+  BoolValue allowed_invite = 17;
+}
+
 message OutPeer {
   int32 type = 1;
   int64 id = 2;
@@ -348,6 +376,7 @@ message FullGroup {
   BoolValue is_suspend = 25;
   Int32Value linked_group_peer_id = 26;
   BoolValue discussion_group_enabled = 27;
+  PrivacyMode privacy_mode = 28;
 }
 
 message MessagesViews {

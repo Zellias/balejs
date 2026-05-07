@@ -63,7 +63,7 @@ export interface ChatOptions {
 }
 
 export interface MessageOptions {
-  rid: number;
+  rid: number | string;
   date: number;
   author: User;
   chat: Chat;
@@ -125,7 +125,7 @@ export interface DefaultResponseOptions {
 
 export interface OtherMessageOptions {
   date: number;
-  messageId: number;
+  messageId: number | string;
   seq?: number;
 }
 
@@ -219,6 +219,19 @@ export class Chat implements Bindable {
     return await this.client.send_gift(this.id, amount, message, options);
   }
 
+  async send_giftpacket(
+    amount: number,
+    message: string,
+    options?: {
+      gift_count?: number;
+      giving_type?: GivingType;
+      show_amounts?: boolean;
+      token?: string;
+    },
+  ): Promise<unknown> {
+    return await this.send_gift(amount, message, options);
+  }
+
   async report(reason?: string, kind: ReportKind = ReportKind.SPAM): Promise<unknown> {
     if (!this.client) {
       throw new Error("Chat is not bound to a client");
@@ -233,7 +246,7 @@ export class Chat implements Bindable {
 }
 
 export class Message implements Bindable {
-  readonly rid: number;
+  readonly rid: number | string;
   readonly date: number;
   readonly id: string;
   readonly author: User;
@@ -254,6 +267,10 @@ export class Message implements Bindable {
     this.caption = options.caption;
     this.gift = options.gift;
     this.raw = options.raw;
+  }
+
+  get message_id(): number | string {
+    return this.rid;
   }
 
   get content(): string {
@@ -306,6 +323,10 @@ export class Message implements Bindable {
     }
 
     return await this.client.open_gift(this, receiverToken);
+  }
+
+  async open_packet(receiverToken?: string): Promise<unknown> {
+    return await this.open_gift(receiverToken);
   }
 
   async report(reason?: string, kind: ReportKind = ReportKind.SPAM): Promise<unknown> {
@@ -421,7 +442,7 @@ export class DefaultResponse {
 
 export class OtherMessage {
   readonly date: number;
-  readonly message_id: number;
+  readonly message_id: number | string;
   readonly seq?: number;
 
   constructor(options: OtherMessageOptions) {
@@ -491,7 +512,7 @@ export function wrapMessageFromUpdate(raw: Record<string, any>, context: Message
   });
 
   return new Message({
-    rid: Number(raw.rid),
+    rid: typeof raw.rid === "string" ? raw.rid : String(raw.rid),
     date: Number(raw.date),
     author,
     chat,

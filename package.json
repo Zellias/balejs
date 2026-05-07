@@ -11,7 +11,10 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-proto.mjs",
-    "check": "tsc -p tsconfig.json --noEmit"
+    "check": "tsc -p tsconfig.json --noEmit",
+    "extract:js-proto": "node scripts/extract-js-proto.mjs",
+    "sync:proto": "node scripts/sync-proto-from-json.mjs --extract --write",
+    "sync:proto:dry": "node scripts/sync-proto-from-json.mjs --extract"
   },
   "keywords": [
     "bale",

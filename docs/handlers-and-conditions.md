@@ -1,10 +1,10 @@
 # Handlers and Conditions
 
-[Docs Home](./README.md) | [Authentication](./authentication.md) | [Client API](./client-api.md)
+[Docs Home](./README.md) | [Client API](./client-api.md) | [Objects and Enums](./objects-and-enums.md)
 
 ## Message Handlers
 
-The primary event entry point is `on_message`.
+Register a handler with no filter:
 
 ```js
 client.on_message()(async function handle(message) {
@@ -12,7 +12,7 @@ client.on_message()(async function handle(message) {
 });
 ```
 
-With a condition:
+Register a handler with a condition:
 
 ```js
 client.on_message(text)(async function handleText(message) {
@@ -20,7 +20,15 @@ client.on_message(text)(async function handleText(message) {
 });
 ```
 
+Handler signature:
+
+```js
+async function handler(message, client) {}
+```
+
 ## Command Handlers
+
+Use `on_command(name, extraCondition?)`:
 
 ```js
 client.on_command("ping")(async function ping(message) {
@@ -28,32 +36,32 @@ client.on_command("ping")(async function ping(message) {
 });
 ```
 
-With extra filtering:
+With an extra filter:
 
 ```js
 client.on_command("ban", group)(async function ban(message) {
-  await message.reply("group-only command");
+  console.log(message.chat.id);
 });
 ```
 
 ## Error Handlers
 
 ```js
-client.on_error(async function logError(error) {
+client.on_error(async function logError(error, client) {
   console.error(error);
 });
 ```
 
-If you do not register an error handler, thrown handler errors bubble out.
+If you do not register an error handler, handler failures still propagate through the client flow.
 
 ## Lifecycle Hooks
 
-Available lifecycle hooks:
+Available lifecycle registrations:
 
-- `on_connect`
-- `on_disconnect`
-- `on_initialize`
-- `on_shutdown`
+- `on_connect(callback)`
+- `on_disconnect(callback)`
+- `on_initialize(callback)`
+- `on_shutdown(callback)`
 
 Example:
 
@@ -65,7 +73,7 @@ client.on_connect(async function ready(current) {
 
 ## Built-in Conditions
 
-The library exports these common conditions:
+Exported message conditions:
 
 - `text`
 - `content`
@@ -88,9 +96,16 @@ client.on_message(all(group, text))(async function groupText(message) {
 });
 ```
 
-## Condition Composition
+## Condition Helpers
 
-Use helper functions:
+Exported helpers:
+
+- `all(...conditions)`
+- `any(...conditions)`
+- `not(condition)`
+- `create(predicate, label?)`
+
+Examples:
 
 ```js
 const onlyPrivateText = all(privateChat, text);
@@ -98,12 +113,19 @@ const textOrGift = any(text, gift);
 const notChannel = not(channel);
 ```
 
-Or instance methods:
+## Condition Methods
+
+Every `Condition` also supports:
+
+- `condition.and(other)`
+- `condition.or(other)`
+- `condition.not()`
+- `condition.matches(client, event)`
+
+Example:
 
 ```js
-const onlyPrivateText = privateChat.and(text);
-const privateOrGroup = privateChat.or(group);
-const notGift = gift.not();
+const privateText = privateChat.and(text);
 ```
 
 ## Custom Conditions
@@ -112,22 +134,36 @@ const notGift = gift.not();
 const fromMe = create(async function fromMe(client, message) {
   return message.author.id === client.user?.id;
 }, "fromMe");
-```
 
-Then:
-
-```js
 client.on_message(all(text, fromMe))(async function selfText(message) {
   console.log(message.text);
 });
 ```
 
-## Balejs vs Balethon Style
-
-In Python Balethon you may write decorators. In this library the equivalent is:
+Predicate signature:
 
 ```js
-client.on_message(all(privateChat, text))(async function handler(message) {
-  await message.reply(message.text);
+async function predicate(client, event) {
+  return true;
+}
+```
+
+## Command Condition Helper
+
+The package also exports `command(name, prefix?, minArguments?, maxArguments?)` as a condition builder.
+
+Example:
+
+```js
+const adminKick = command("kick", "/", 1, 1).and(group);
+
+client.on_message(adminKick)(async function kick(message) {
+  console.log(message.text);
 });
 ```
+
+## Notes
+
+- conditions are async-safe
+- handlers receive wrapped `Message` objects
+- updates with `rid === 0` are ignored by the client before dispatch

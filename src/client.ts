@@ -37,7 +37,6 @@ interface CachedWalletState {
   expiresAt: number;
 }
 
-const EMPTY_PAGE_NO = Buffer.alloc(0);
 const START_PHONE_AUTH_OPTIONS = Buffer.from([0, 1]);
 const EMPTY_OPTIMIZATIONS: readonly number[] = [];
 
@@ -45,6 +44,17 @@ export interface ClientOptions {
   sessionDir?: string;
   grpc?: GrpcConnectionOptions;
   websocket?: WebSocketConnectionOptions;
+}
+
+export interface FileLocationInput {
+  file_id: number;
+  access_hash: number;
+  file_storage_version?: number;
+}
+
+export interface SingleMediaInput {
+  random_id?: number | string;
+  media: Record<string, any>;
 }
 
 type MessageCallback = (message: Message, client: Client) => unknown | Promise<unknown>;
@@ -120,14 +130,14 @@ function parsePeerString(value: string): { id: number; type: number } | undefine
   };
 }
 
-function parseMessageId(value: string): { rid: number; date: number } {
+function parseMessageId(value: string): { rid: string; date: number } {
   const match = /^(\d+)\|(\d+)$/.exec(value.trim());
   if (!match) {
     throw new TypeError(`Invalid Bale message id: ${value}`);
   }
 
   return {
-    rid: Number(match[1]),
+    rid: match[1],
     date: Number(match[2]),
   };
 }
@@ -502,9 +512,26 @@ export class Client {
           const wrapped = wrapUser(raw);
           wrapped.bind(this);
           this.peerCache.set(`${wrapped.id}|1`, wrapped);
+          if (wrapped.isBot) {
+            this.peerCache.set(`${wrapped.id}|4`, wrapped);
+          }
           return wrapped;
         })
       : [];
+  }
+
+  async load_full_users(users: Array<number | string>): Promise<Array<Record<string, any>>> {
+    const response = await this.invoke<Record<string, any>>(
+      "bale.users.v1.Users",
+      "LoadFullUsers",
+      "request.LoadFullUsers",
+      "response.LoadFullUsers",
+      {
+        user_peers: users.map((user) => this.requireUserOutPeer(user)),
+      },
+    );
+
+    return Array.isArray(response.full_users) ? response.full_users : [];
   }
 
   async get_full_group(chatId: string): Promise<Record<string, any> | undefined> {
@@ -542,6 +569,44 @@ export class Client {
     }
 
     return undefined;
+  }
+
+  async search_contacts(query: string): Promise<Record<string, any>> {
+    const response = await this.invoke<Record<string, any>>(
+      "bale.users.v1.Users",
+      "SearchContacts",
+      "request.SearchContacts",
+      "response.SearchContacts",
+      {
+        request: normalizeSearchQuery(query),
+      },
+    );
+
+    const wrappedUsers = Array.isArray(response.users)
+      ? response.users.map((raw) => {
+          const user = wrapUser(raw);
+          user.bind(this);
+          this.peerCache.set(`${user.id}|1`, user);
+          if (user.isBot) {
+            this.peerCache.set(`${user.id}|4`, user);
+          }
+          return user;
+        })
+      : [];
+    const wrappedGroups = Array.isArray(response.groups)
+      ? response.groups.map((raw) => {
+          const chat = wrapGroup(raw);
+          chat.bind(this);
+          this.peerCache.set(chat.id, chat);
+          return chat;
+        })
+      : [];
+
+    return {
+      ...response,
+      users: wrappedUsers,
+      groups: wrappedGroups,
+    };
   }
 
   async load_history(chatId: string, fromDate = -1, limit = 20): Promise<Message[]> {
@@ -752,6 +817,10 @@ export class Client {
     return wrapDefaultResponse(response);
   }
 
+  async leave_group(chatId: string): Promise<DefaultResponse> {
+    return await this.leave_chat(chatId);
+  }
+
   async get_group_link(chatId: string): Promise<string | undefined> {
     const groupPeer = this.requireGroupPeer(chatId);
     const response = await this.invoke<Record<string, any>>(
@@ -910,6 +979,65 @@ export class Client {
         rid: BaleWebSocketConnection.createRid(),
         about,
         optimizations: EMPTY_OPTIMIZATIONS,
+      },
+    );
+
+    return wrapDefaultResponse(response);
+  }
+
+  async edit_group_avatar(chatId: string, file: FileLocationInput): Promise<Record<string, any>> {
+    const groupPeer = this.requireGroupPeer(chatId);
+    return await this.invoke<Record<string, any>>(
+      "bale.groups.v1.Groups",
+      "EditGroupAvatar",
+      "request.EditGroupAvatar",
+      "response.EditGroupAvatar",
+      {
+        group_peer: groupPeer,
+        file_location: {
+          file_id: file.file_id,
+          access_hash: file.access_hash,
+          file_storage_version:
+            file.file_storage_version !== undefined
+              ? {
+                  value: file.file_storage_version,
+                }
+              : undefined,
+        },
+        rid: BaleWebSocketConnection.createRid(),
+        optimizations: EMPTY_OPTIMIZATIONS,
+      },
+    );
+  }
+
+  async load_group_avatars(chatId: string): Promise<Record<string, any>[]> {
+    const peer = this.requireGroupPeer(chatId);
+    const response = await this.invoke<Record<string, any>>(
+      "bale.groups.v1.Groups",
+      "LoadGroupAvatars",
+      "request.LoadGroupAvatars",
+      "response.LoadGroupAvatars",
+      {
+        peer,
+      },
+    );
+
+    const avatars = response.avatars as Record<string, any> | undefined;
+    return Array.isArray(avatars?.avatars) ? avatars.avatars : [];
+  }
+
+  async remove_group_avatar(chatId: string, avatarId?: number): Promise<DefaultResponse> {
+    const groupPeer = this.requireGroupPeer(chatId);
+    const response = await this.invoke<Record<string, any>>(
+      "bale.groups.v1.Groups",
+      "RemoveGroupAvatar",
+      "request.RemoveGroupAvatar",
+      "response.DefaultResponse",
+      {
+        group_peer: groupPeer,
+        rid: BaleWebSocketConnection.createRid(),
+        optimizations: EMPTY_OPTIMIZATIONS,
+        avatar_id: avatarId !== undefined ? { value: avatarId } : undefined,
       },
     );
 
@@ -1142,6 +1270,36 @@ export class Client {
     );
 
     return this.createOutboundMessage(peer, rid, response.date, messagePayload);
+  }
+
+  async send_multi_media_message(chatId: string, media: SingleMediaInput[]): Promise<Message[]> {
+    const peer = this.requirePeer(chatId);
+    const exPeer = this.requireExPeer(chatId);
+    const groupedId = BaleWebSocketConnection.createRid();
+    const normalizedMedia = media.map((item) => {
+      const randomId = item.random_id ?? BaleWebSocketConnection.createRid();
+      return {
+        random_id: randomId,
+        media: item.media,
+      };
+    });
+    const response = await this.invoke<Record<string, any>>(
+      "bale.messaging.v2.Messaging",
+      "SendMultiMediaMessage",
+      "request.SendMultiMediaMessage",
+      "response.DefaultResponse",
+      {
+        peer: exPeer,
+        multi_media: normalizedMedia,
+        grouped_id: groupedId,
+      },
+    );
+
+    return normalizedMedia.map((item) =>
+      this.createOutboundMessage(peer, item.random_id, response.date, {
+        document_message: item.media,
+      }),
+    );
   }
 
   async get_messages_views(
@@ -1380,6 +1538,20 @@ export class Client {
     return await this.send_gift(chatId, amount, message, options);
   }
 
+  async send_giftpacket(
+    chatId: string,
+    amount: number,
+    message: string,
+    options: {
+      gift_count?: number;
+      giving_type?: GivingType;
+      show_amounts?: boolean;
+      token?: string;
+    } = {},
+  ): Promise<DefaultResponse> {
+    return await this.send_gift(chatId, amount, message, options);
+  }
+
   async open_gift(message: Message, receiverToken?: string): Promise<PacketResponse> {
     const walletToken = receiverToken ?? (await this.get_wallet()).wallet?.token;
 
@@ -1393,14 +1565,8 @@ export class Client {
       "request.OpenGiftPacket",
       "response.OpenGiftPacket",
       {
-        message: {
-          peer: this.requirePeer(message.chat),
-          message_id: message.rid,
-          date: message.date,
-        },
+        message: this.ensureInfoMessage(message),
         receiver_token: walletToken,
-        page_no: EMPTY_PAGE_NO,
-        order_type: 3,
       },
     );
 
@@ -1408,6 +1574,10 @@ export class Client {
   }
 
   async open_gift_packet(message: Message, receiverToken?: string): Promise<PacketResponse> {
+    return await this.open_gift(message, receiverToken);
+  }
+
+  async open_packet(message: Message, receiverToken?: string): Promise<PacketResponse> {
     return await this.open_gift(message, receiverToken);
   }
 
@@ -1593,7 +1763,7 @@ export class Client {
 
   private createOutboundMessage(
     peer: { id: number; type: number },
-    rid: number,
+    rid: number | string,
     date: unknown,
     message: Record<string, any>,
   ): Message {
@@ -1623,11 +1793,11 @@ export class Client {
 
   private async findHistoryMessage(
     peer: { id: number; type: number },
-    messageId: { rid: number; date: number },
+    messageId: { rid: string; date: number },
   ): Promise<Record<string, any> | undefined> {
     const history = await this.loadHistory(peer, messageId.date, 20);
     const items = Array.isArray(history.history) ? history.history : [];
-    return items.find((item) => Number(item.rid) === messageId.rid) ?? items[0];
+    return items.find((item) => String(item.rid) === messageId.rid);
   }
 
   private requirePeer(chatId: string | Chat): { id: number; type: number } {
@@ -1706,7 +1876,7 @@ export class Client {
     };
   }
 
-  private ensureOtherMessage(message: Message | OtherMessage): { date: number; message_id: number; seq?: { value: number } } {
+  private ensureOtherMessage(message: Message | OtherMessage): { date: number; message_id: number | string; seq?: { value: number } } {
     if (message instanceof OtherMessage) {
       return {
         date: message.date,
@@ -1721,7 +1891,15 @@ export class Client {
     };
   }
 
-  private toMessageIdentifier(message: string | Message | OtherMessage): { date: number; rid: number; seq?: number } {
+  private ensureInfoMessage(message: Message): { peer: { id: number; type: number }; message_id: number | string; date: number } {
+    return {
+      peer: this.requirePeer(message.chat),
+      message_id: message.message_id,
+      date: message.date,
+    };
+  }
+
+  private toMessageIdentifier(message: string | Message | OtherMessage): { date: number; rid: number | string; seq?: number } {
     if (typeof message === "string") {
       const parsed = parseMessageId(message);
       return {
@@ -1794,6 +1972,10 @@ export class Client {
       const user = wrapUser(response.users[0]);
       user.bind(this);
       this.peerCache.set(cacheKey, user);
+      this.peerCache.set(`${user.id}|1`, user);
+      if (user.isBot) {
+        this.peerCache.set(`${user.id}|4`, user);
+      }
       return user;
     }
 
@@ -1817,6 +1999,7 @@ export class Client {
     const chat = wrapGroup(response.full_group);
     chat.bind(this);
     this.peerCache.set(cacheKey, chat);
+    this.peerCache.set(chat.id, chat);
     return chat;
   }
 

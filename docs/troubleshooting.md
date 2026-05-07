@@ -1,53 +1,67 @@
 # Troubleshooting
 
-[Docs Home](./README.md) | [Authentication](./authentication.md)
+[Docs Home](./README.md) | [Authentication](./authentication.md) | [Client API](./client-api.md)
 
 ## `PHONE_NUMBER_INVALID`
 
-This comes from Bale auth, not from the dispatcher or message system.
+This is a Bale auth response.
 
 Check:
 
 - you are using the real Bale account phone number
-- you are passing either `BALE_PHONE` or `BALE_SESSION`
-- your example file is not overriding the env var with a hardcoded string
+- the number belongs to a Bale account
+- you passed `BALE_PHONE` or `BALE_SESSION`
+- the phone number is in a sane format such as `+989121234567`
 
-Recommended run command:
+Recommended command:
 
 ```bash
 BALE_PHONE='+989121234567' node examples/echo.js
 ```
 
-## Session Issues
+## Stale Session Files
 
-If a saved `.session` file is stale or wrong, remove it and log in again:
+If Bale rejects a saved session, remove the `.session` file and authenticate again.
+
+Session file location:
 
 ```text
 <sessionDir>/<token-or-phone>.session
 ```
 
-Then rerun the client.
+## `ClientStateError`
 
-## `ClientStateError: Bale userbot is not connected`
+Common causes:
 
-You called a websocket RPC before `connect()` or `run()` finished.
+- sending websocket RPCs before `connect()` finishes
+- calling live methods after disconnect
+- trying to use message helpers on unbound manual objects
 
-Use:
+Correct pattern:
 
 ```js
 await client.connect();
 await client.send_message("12345|1", "hello");
+await client.disconnect();
 ```
 
-or register work inside `run()` lifecycle or handlers.
+Or:
 
-Some methods can also use the HTTP `post()` path, but normal messaging and update-driven flows still expect a connected client.
+```js
+client.run();
+```
 
-## Handler Errors
+## `BaleRpcError`
 
-If your handler throws and you do not have an `on_error` handler, the error will bubble.
+This means Bale returned an RPC failure.
 
-Add:
+Useful fields:
+
+- `error.code`
+- `error.message`
+- `error.reason`
+
+Example:
 
 ```js
 client.on_error(async function logError(error) {
@@ -55,27 +69,43 @@ client.on_error(async function logError(error) {
 });
 ```
 
-## Empty or Missing Chats
-
-`get_chat()` can return `undefined`.
+## `get_chat()` Returns `undefined`
 
 That usually means:
 
 - the peer id is wrong
 - the search query did not resolve
-- Bale did not return the peer in the current session context
+- Bale did not return the peer for the current account/session
 
-## Performance Notes
+Remember that peer ids must look like:
 
-Current speed work already in the library:
+```text
+<id>|<type>
+```
 
-- cached protobuf type lookup
-- gRPC-web POST auth and fallback transport
-- websocket metadata reuse
-- pre-encoded keepalive payload
-- cached lightweight chat and author wrappers for updates
+## Message Id Problems
 
-## Building
+Methods such as `edit_message_text()`, `delete_message()`, `forward_message()`, and `copy_message()` expect message ids in this form:
+
+```text
+<rid>|<date>
+```
+
+If you already have a wrapped `Message`, use `message.id`.
+
+## Gift Problems
+
+If gift sending or opening fails:
+
+- verify that the account has wallet access
+- verify that a wallet token exists
+- call `get_wallet()` and inspect `wallet.wallet?.token`
+
+## File Upload Confusion
+
+`get_file_upload_url()` does not upload the file for you. It only returns Bale upload metadata.
+
+## Build After Source Changes
 
 If you change TypeScript or proto files:
 
@@ -83,3 +113,13 @@ If you change TypeScript or proto files:
 npm run check
 npm run build
 ```
+
+## Debugging Strategy
+
+For most local issues:
+
+1. add an `on_error()` handler
+2. verify auth input
+3. delete stale `.session` files if needed
+4. rebuild after changing source
+5. inspect the raw output from low-level methods if a wrapper returns `Record<string, any>`
