@@ -136,3 +136,5 @@ Full docs live in [docs/README.md](./docs/README.md).
 ## GitHub Pages
 
 The `/docs` folder is plain Markdown and can be published directly with GitHub Pages.
+
+Developed based on [Balethon](https://github.com/Balethon/Balethon/) for being user friendly with 💗 by [Zellias](https://github.com/zellias)
