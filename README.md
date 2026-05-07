@@ -137,4 +137,4 @@ Full docs live in [docs/README.md](./docs/README.md).
 
 The `/docs` folder is plain Markdown and can be published directly with GitHub Pages.
 
-Developed based on [Balethon](https://github.com/Balethon/Balethon/) for being user friendly with 💗 by [Zellias](https://github.com/zellias)
+Respect for [Balethon](https://github.com/Balethon/Balethon/) team for being user friendly and being core of balejs with 💗 by [Zellias](https://github.com/zellias)
