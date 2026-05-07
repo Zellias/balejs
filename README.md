@@ -122,6 +122,16 @@ Full docs live in [docs/README.md](./docs/README.md).
 
 - [examples/echo.js](./examples/echo.js)
 - [examples/gift.js](./examples/gift.js)
+- [examples/command-ping.js](./examples/command-ping.js)
+- [examples/contacts.js](./examples/contacts.js)
+- [examples/dialogs.js](./examples/dialogs.js)
+- [examples/forward-message.js](./examples/forward-message.js)
+- [examples/history.js](./examples/history.js)
+- [examples/lifecycle.js](./examples/lifecycle.js)
+- [examples/reaction.js](./examples/reaction.js)
+- [examples/send-message.js](./examples/send-message.js)
+- [examples/typing.js](./examples/typing.js)
+- [examples/wallet.js](./examples/wallet.js)
 
 ## GitHub Pages
 
