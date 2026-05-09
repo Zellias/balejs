@@ -70,6 +70,7 @@ export interface MessageOptions {
   text?: string;
   caption?: string;
   gift?: GiftPacket;
+  repliedTo?: Message;
   raw?: unknown;
 }
 
@@ -254,6 +255,7 @@ export class Message implements Bindable {
   readonly text?: string;
   readonly caption?: string;
   readonly gift?: GiftPacket;
+  readonly replied_to?: Message;
   readonly raw?: unknown;
   protected client?: Client;
 
@@ -266,6 +268,7 @@ export class Message implements Bindable {
     this.text = options.text;
     this.caption = options.caption;
     this.gift = options.gift;
+    this.replied_to = options.repliedTo;
     this.raw = options.raw;
   }
 
@@ -273,8 +276,20 @@ export class Message implements Bindable {
     return this.rid;
   }
 
+  get sender_id(): number {
+    return this.author.id;
+  }
+
   get content(): string {
     return this.text ?? this.caption ?? "";
+  }
+
+  async answer(text: string): Promise<unknown> {
+    if (!this.client) {
+      throw new Error("Message is not bound to a client");
+    }
+
+    return await this.client.send_message(this.chat.id, text);
   }
 
   async reply(text: string): Promise<unknown> {
@@ -282,7 +297,7 @@ export class Message implements Bindable {
       throw new Error("Message is not bound to a client");
     }
 
-    return await this.client.send_message(this.chat.id, text);
+    return await this.client.send_message(this.chat.id, text, this);
   }
 
   async edit_text(text: string): Promise<unknown> {
@@ -293,12 +308,116 @@ export class Message implements Bindable {
     return await this.client.edit_message_text(this.chat.id, this.id, text);
   }
 
-  async delete(): Promise<unknown> {
+  async delete(just_me = false): Promise<unknown> {
     if (!this.client) {
       throw new Error("Message is not bound to a client");
     }
 
-    return await this.client.delete_message(this.chat.id, this.id);
+    return await this.client.delete_message(this.chat.id, this.id, just_me);
+  }
+
+  async seen(): Promise<unknown> {
+    if (!this.client) {
+      throw new Error("Message is not bound to a client");
+    }
+
+    return await this.client.seen_chat(this.chat.id, this.date);
+  }
+
+  async clear_chat(): Promise<unknown> {
+    if (!this.client) {
+      throw new Error("Message is not bound to a client");
+    }
+
+    return await this.client.clear_chat(this.chat.id);
+  }
+
+  async delete_chat(): Promise<unknown> {
+    if (!this.client) {
+      throw new Error("Message is not bound to a client");
+    }
+
+    return await this.client.delete_chat(this.chat.id);
+  }
+
+  async load_history(limit = 20, fromDate = -1): Promise<Message[]> {
+    if (!this.client) {
+      throw new Error("Message is not bound to a client");
+    }
+
+    return await this.client.load_history(this.chat.id, fromDate, limit);
+  }
+
+  async pin(just_mine = false): Promise<unknown> {
+    if (!this.client) {
+      throw new Error("Message is not bound to a client");
+    }
+
+    return await this.client.pin_message(this.chat.id, this.id, just_mine);
+  }
+
+  async unpin(): Promise<unknown> {
+    if (!this.client) {
+      throw new Error("Message is not bound to a client");
+    }
+
+    return await this.client.unpin_message(this.chat.id, this.id);
+  }
+
+  async unpin_all(): Promise<unknown> {
+    if (!this.client) {
+      throw new Error("Message is not bound to a client");
+    }
+
+    return await this.client.unpin_all(this.chat.id);
+  }
+
+  async pin_in_group(): Promise<unknown> {
+    if (!this.client) {
+      throw new Error("Message is not bound to a client");
+    }
+
+    return await this.client.pin_group_message(this.chat.id, this.id);
+  }
+
+  async unpin_in_group(): Promise<unknown> {
+    if (!this.client) {
+      throw new Error("Message is not bound to a client");
+    }
+
+    return await this.client.unpin_group_message(this.chat.id, this.id);
+  }
+
+  async unpin_all_in_group(): Promise<unknown> {
+    if (!this.client) {
+      throw new Error("Message is not bound to a client");
+    }
+
+    return await this.client.remove_group_pins(this.chat.id);
+  }
+
+  async load_pinned_messages(): Promise<Message[]> {
+    if (!this.client) {
+      throw new Error("Message is not bound to a client");
+    }
+
+    return await this.client.load_pinned_messages(this.chat.id);
+  }
+
+  async load_full_chat(): Promise<unknown> {
+    if (!this.client) {
+      throw new Error("Message is not bound to a client");
+    }
+
+    return await this.client.load_full_chat(this.chat.id);
+  }
+
+  async react(code: string): Promise<unknown> {
+    if (!this.client) {
+      throw new Error("Message is not bound to a client");
+    }
+
+    return await this.client.message_set_reaction(this.chat.id, this.id, code);
   }
 
   async forward(chatId: string): Promise<unknown> {
@@ -342,6 +461,7 @@ export class Message implements Bindable {
     this.author.bind(client);
     this.chat.bind(client);
     this.gift?.bind(client);
+    this.replied_to?.bind(client);
   }
 }
 
@@ -511,6 +631,23 @@ export function wrapMessageFromUpdate(raw: Record<string, any>, context: Message
     id: Number(raw.sender_uid),
   });
 
+  let repliedTo: Message | undefined;
+  if (raw.quoted_message?.quoted_message_content) {
+    const quotedPeer = raw.quoted_message?.quoted_peer
+      ? {
+          id: Number(raw.quoted_message.quoted_peer.id),
+          type: Number(raw.quoted_message.quoted_peer.type),
+        }
+      : raw.peer;
+    repliedTo = wrapMessageFromUpdate({
+      peer: quotedPeer,
+      sender_uid: raw.quoted_message.sender_user_id,
+      date: Number(raw.quoted_message.message_date ?? 0),
+      rid: raw.quoted_message.message_id?.value ?? raw.quoted_message.message_id ?? 0,
+      message: raw.quoted_message.quoted_message_content,
+    });
+  }
+
   return new Message({
     rid: typeof raw.rid === "string" ? raw.rid : String(raw.rid),
     date: Number(raw.date),
@@ -519,6 +656,7 @@ export function wrapMessageFromUpdate(raw: Record<string, any>, context: Message
     text: raw.message?.text_message?.text,
     caption: raw.message?.document_message?.caption?.text,
     gift: raw.message?.gift ? wrapGiftPacket(raw.message.gift) : undefined,
+    repliedTo,
     raw,
   });
 }

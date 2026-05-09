@@ -62,8 +62,16 @@ const client = new Client(auth, options);
 `options` supports:
 
 - `sessionDir?: string`
+- `sessionName?: string`
 - `grpc?: GrpcConnectionOptions`
 - `websocket?: WebSocketConnectionOptions`
+- `updateConcurrency?: number`
+
+`GrpcConnectionOptions` also supports transport hardening settings:
+
+- `timeoutMs?: number`
+- `maxRetries?: number`
+- `retryBaseDelayMs?: number`
 
 ## Session Storage
 
@@ -78,6 +86,7 @@ You can override that:
 ```js
 const client = new Client(auth, {
   sessionDir: "./examples",
+  sessionName: "main-account",
 });
 ```
 

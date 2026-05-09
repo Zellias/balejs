@@ -1,12 +1,13 @@
 # balejs
 
-`balejs` is a Node.js Bale user library created by [Zellias](https://github.com/zellias).
+`balejs` is a Node.js Bale library created by [Zellias](https://github.com/zellias).
 
-It targets real Bale user sessions, not the bot API. The library provides:
+It supports both real Bale user sessions and the official Bale Bot API. The library provides:
 
 - interactive phone authentication and reusable session login
 - websocket updates for live handlers and RPC calls
 - gRPC-web POST fallback for auth and direct RPC usage
+- official Bale Bot API support over `https://tapi.bale.ai/bot<TOKEN>/METHOD`
 - messaging, dialogs, groups, files, gifts, reactions, reports, and wallet helpers
 
 ## Install
@@ -61,6 +62,9 @@ If you use a phone number, the client runs the Bale phone login flow in the term
 Main exports:
 
 - `Client`
+- `BotClient`
+- `BotInputFile`
+- bot payload types such as `BotUpdate`, `BotMessage`, `BotCallbackQuery`, `BotPreCheckoutQuery`, `BotSuccessfulPayment`, `BotFile`
 - conditions: `all`, `any`, `not`, `create`, `text`, `content`, `gift`, `private`, `group`, `channel`, `command`
 - errors: `BaleRpcError`, `AuthenticationError`, `ClientStateError`
 - objects and enums: `User`, `Chat`, `Message`, `GiftPacket`, `PacketResponse`, `Wallet`, `WalletResponse`, `DefaultResponse`, `OtherMessage`, `ChatType`, `GivingType`, `GiftOpenning`, `ReportKind`, `PeerSource`
@@ -103,8 +107,85 @@ Message ids use:
 
 - websocket RPCs after `connect()` / `run()` for live work and updates
 - gRPC-web POST requests for authentication and explicit HTTP fallback
+- HTTP Bot API requests for normal bots through `BotClient`
 
 Use `invoke()` when you want the client to use the active websocket if connected and fall back to HTTP otherwise. Use `post()` when you explicitly want the gRPC-web request path.
+
+## Bot Quick Start
+
+```js
+const { BotClient } = require("./dist");
+
+const token = process.env.BALE_BOT_TOKEN;
+
+if (!token) {
+  throw new Error("Set BALE_BOT_TOKEN to your Bale bot token.");
+}
+
+const bot = new BotClient(token);
+
+bot.on_message(async (message, client) => {
+  const text = typeof message.text === "string" ? message.text : "";
+  const chatId = message.chat?.id;
+  if (!chatId || !text) return;
+  await client.send_message(chatId, `echo: ${text}`);
+});
+
+bot.on_error(async (error) => {
+  console.error(error);
+});
+
+bot.run();
+```
+
+`BotClient` includes long polling with `getUpdates()` and thin wrappers for common official methods such as:
+
+- `get_me()`
+- `get_updates()`
+- `set_webhook()`
+- `delete_webhook()`
+- `send_message()`
+- `forward_message()`
+- `copy_message()`
+- `send_photo()`
+- `send_document()`
+- `send_video()`
+- `send_animation()`
+- `send_audio()`
+- `send_voice()`
+- `send_media_group()`
+- `edit_message_text()`
+- `delete_message()`
+- `get_chat()`
+- `get_chat_member()`
+- `ban_chat_member()`
+- `answer_callback_query()`
+- `ask_review()`
+- `answer_shipping_query()`
+- `answer_pre_checkout_query()`
+- `send_invoice()`
+- `create_invoice_link()`
+- `inquire_transaction()`
+
+For methods not wrapped yet, use `bot.request("MethodName", payload)`.
+
+For better reliability under weak networks, `BotClient` also supports:
+
+- `requestTimeoutMs`
+- `maxRetries`
+- `retryBaseDelayMs`
+
+It also exposes documented update hooks plus higher-level message subtype hooks such as:
+
+- `on_message()`
+- `on_edited_message()`
+- `on_callback_query()`
+- `on_pre_checkout_query()`
+- `on_successful_payment()`
+- `on_text()`
+- `on_photo()`
+- `on_document()`
+- `on_location()`
 
 ## Docs
 
@@ -112,6 +193,7 @@ Full docs live in [docs/README.md](./docs/README.md).
 
 - [Getting Started](./docs/getting-started.md)
 - [Authentication](./docs/authentication.md)
+- [Bot API](./docs/bot-api.md)
 - [Handlers and Conditions](./docs/handlers-and-conditions.md)
 - [Client API](./docs/client-api.md)
 - [Objects and Enums](./docs/objects-and-enums.md)
@@ -121,6 +203,7 @@ Full docs live in [docs/README.md](./docs/README.md).
 ## Examples
 
 - [examples/echo.js](./examples/echo.js)
+- [examples/bot-echo.js](./examples/bot-echo.js)
 - [examples/gift.js](./examples/gift.js)
 - [examples/command-ping.js](./examples/command-ping.js)
 - [examples/contacts.js](./examples/contacts.js)
@@ -136,5 +219,3 @@ Full docs live in [docs/README.md](./docs/README.md).
 ## GitHub Pages
 
 The `/docs` folder is plain Markdown and can be published directly with GitHub Pages.
-
-Respect for [Balethon](https://github.com/Balethon/Balethon/) team for being user friendly and being core of balejs with 💗 by [Zellias](https://github.com/zellias)

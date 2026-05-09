@@ -41,9 +41,11 @@ const START_PHONE_AUTH_OPTIONS = Buffer.from([0, 1]);
 const EMPTY_OPTIMIZATIONS: readonly number[] = [];
 
 export interface ClientOptions {
-  sessionDir?: string;
+              sessionDir?: string;
+  sessionName?: string;
   grpc?: GrpcConnectionOptions;
   websocket?: WebSocketConnectionOptions;
+  updateConcurrency?: number;
 }
 
 export interface FileLocationInput {
@@ -145,6 +147,7 @@ function parseMessageId(value: string): { rid: string; date: number } {
 export class Client {
   readonly token_or_phone_number: string;
   readonly sessionDir: string;
+  readonly sessionName: string;
   readonly dispatcher = new Dispatcher();
 
   private readonly grpcConnection: BaleGrpcConnection;
@@ -162,13 +165,18 @@ export class Client {
   private readonly messageAuthorCache = new Map<number, User>();
   private walletCache?: CachedWalletState;
   private walletCachePromise?: Promise<WalletResponse>;
+  private readonly updateConcurrency: number;
+  private readonly pendingUpdates: Record<string, unknown>[] = [];
+  private activeUpdateTasks = 0;
   user?: User;
 
   constructor(tokenOrPhoneNumber: string, options: ClientOptions = {}) {
     this.token_or_phone_number = tokenOrPhoneNumber;
     this.sessionDir = options.sessionDir ?? process.cwd();
+    this.sessionName = options.sessionName?.trim() || tokenOrPhoneNumber;
     this.grpcConnection = new BaleGrpcConnection(options.grpc);
     this.websocketOptions = options.websocket ?? {};
+    this.updateConcurrency = Math.max(1, Math.floor(options.updateConcurrency ?? 16));
 
     if (isSessionString(tokenOrPhoneNumber)) {
       this.session = parseSessionString(tokenOrPhoneNumber);
@@ -230,7 +238,7 @@ export class Client {
 
     this.websocket = new BaleWebSocketConnection(this.session.jwt, this.websocketOptions);
     this.websocket.on("update", (update) => {
-      void this.handleUpdate(update as Record<string, unknown>);
+      this.enqueueUpdate(update as Record<string, unknown>);
     });
     this.websocket.on("close", () => {
       void this.handleDisconnect();
@@ -241,6 +249,10 @@ export class Client {
 
     await this.websocket.start();
     this.user = await this.get_me();
+    const username = String(this.user?.username || this.user?.name || "unknown").trim() || "unknown";
+    const userId = Number(this.user?.id || 0);
+    console.log(`Connected to ${username} | ${userId}`);
+    void this.prime_wallet_cache();
   }
 
   async disconnect(): Promise<void> {
@@ -317,7 +329,7 @@ export class Client {
         app_id: 4,
         api_key: "C28D46DC4C3A7A26564BFCC48B929086A95C93C98E789A19847BEE8627DE4E7D",
         device_hash: "ce5ced83-a9ab-47fa-80c8-ed425eeb2ace",
-        device_title: "Chrome_138.0.0.0, Windows",
+        device_title: "Chrome_138.0.0.0, Balejs Client",
         send_code_type: 1,
         options: START_PHONE_AUTH_OPTIONS,
       },
@@ -609,6 +621,55 @@ export class Client {
     };
   }
 
+  async search_username(query: string): Promise<{ user?: User; group?: Chat }> {
+    const result = await this.search_contacts(query);
+    const user = Array.isArray(result.users) ? result.users[0] : undefined;
+    const group = Array.isArray(result.groups) ? result.groups[0] : undefined;
+    return { user, group };
+  }
+
+  async create_group(
+    title: string,
+    username?: string,
+    users: Array<number | string> = [],
+    groupType = 0,
+  ): Promise<Record<string, any>> {
+    const normalizedUsername = username?.trim();
+    const response = await this.invoke<Record<string, any>>(
+      "bale.groups.v1.Groups",
+      "CreateGroup",
+      "request.CreateGroup",
+      "response.CreateGroup",
+      {
+        random_id: Date.now(),
+        title,
+        users: users.map((user) => this.requireUserOutPeer(user)),
+        group_type: groupType,
+        username: normalizedUsername ? { value: normalizedUsername } : undefined,
+        restriction: normalizedUsername ? 1 : 0,
+      },
+    );
+
+    const chat = response.group ? wrapGroup(response.group) : undefined;
+    if (chat) {
+      chat.bind(this);
+      this.peerCache.set(chat.id, chat);
+    }
+
+    return {
+      ...response,
+      group: chat,
+    };
+  }
+
+  async create_channel(
+    title: string,
+    username?: string,
+    users: Array<number | string> = [],
+  ): Promise<Record<string, any>> {
+    return await this.create_group(title, username, users, 1);
+  }
+
   async load_history(chatId: string, fromDate = -1, limit = 20): Promise<Message[]> {
     const peer = this.requirePeer(chatId);
     const history = await this.loadHistory(peer, fromDate, limit);
@@ -642,6 +703,21 @@ export class Client {
     return wrapDefaultResponse(response);
   }
 
+  async delete_chat(chatId: string): Promise<DefaultResponse> {
+    const peer = this.requirePeer(chatId);
+    const response = await this.invoke<Record<string, any>>(
+      "bale.messaging.v2.Messaging",
+      "DeleteChat",
+      "request.DeleteChat",
+      "response.DefaultResponse",
+      {
+        peer,
+      },
+    );
+
+    return wrapDefaultResponse(response);
+  }
+
   async message_read(chatId: string, date = Date.now()): Promise<DefaultResponse> {
     const peer = this.requirePeer(chatId);
     const response = await this.invoke<Record<string, any>>(
@@ -656,6 +732,10 @@ export class Client {
     );
 
     return wrapDefaultResponse(response);
+  }
+
+  async seen_chat(chatId: string, date = Date.now()): Promise<DefaultResponse> {
+    return await this.message_read(chatId, date);
   }
 
   async load_dialogs(limit = 40, minDate = -1, excludePinned = false): Promise<Record<string, any>> {
@@ -1074,6 +1154,16 @@ export class Client {
     return Number(response.members_count ?? 0);
   }
 
+  async load_full_chat(chatId: string): Promise<Record<string, any> | undefined> {
+    const peer = this.requirePeer(chatId);
+    if (peer.type === 1 || peer.type === 4) {
+      const users = await this.load_full_users([peer.id]);
+      return users[0];
+    }
+
+    return await this.get_full_group(chatId);
+  }
+
   async load_pinned_messages(chatId: string): Promise<Message[]> {
     const peer = this.requireExPeer(chatId);
     const response = await this.invoke<Record<string, any>>(
@@ -1140,6 +1230,14 @@ export class Client {
     );
 
     return wrapDefaultResponse(response);
+  }
+
+  async unpin_message(chatId: string, messageId: string): Promise<DefaultResponse> {
+    return await this.unpin_messages(chatId, [messageId], false);
+  }
+
+  async unpin_all(chatId: string): Promise<DefaultResponse> {
+    return await this.unpin_messages(chatId, [], true);
   }
 
   async pin_group_message(chatId: string, messageId: string): Promise<DefaultResponse> {
@@ -1248,7 +1346,7 @@ export class Client {
     );
   }
 
-  async send_message(chatId: string, text: string): Promise<Message> {
+  async send_message(chatId: string, text: string, replyTo?: Message): Promise<Message> {
     const peer = this.requirePeer(chatId);
     const rid = BaleWebSocketConnection.createRid();
     const messagePayload = {
@@ -1265,6 +1363,7 @@ export class Client {
         peer,
         rid,
         message: messagePayload,
+        reply_to: replyTo ? this.toInfoMessage(replyTo) : undefined,
         ex_peer: peer,
       },
     );
@@ -1338,7 +1437,7 @@ export class Client {
     );
   }
 
-  async delete_message(chatId: string, messageId: string): Promise<DefaultResponse> {
+  async delete_message(chatId: string, messageId: string, justMine = false): Promise<DefaultResponse> {
     const peer = this.requirePeer(chatId);
     const parsedMessageId = parseMessageId(messageId);
 
@@ -1354,7 +1453,7 @@ export class Client {
           dates: [parsedMessageId.date],
         },
         just_mine: {
-          value: 0,
+          value: justMine ? 1 : 0,
         },
       },
     );
@@ -1365,26 +1464,40 @@ export class Client {
   async edit_message_text(chatId: string, messageId: string, text: string): Promise<DefaultResponse> {
     const peer = this.requirePeer(chatId);
     const parsedMessageId = parseMessageId(messageId);
-    const currentMessage = await this.findHistoryMessage(peer, parsedMessageId);
+    let lastError: unknown;
 
-    if (!currentMessage?.message?.text_message) {
-      throw new ClientStateError(`Could not load text message ${messageId} from ${chatId}`);
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        const currentMessage = await this.findHistoryMessage(peer, parsedMessageId).catch(() => undefined);
+        const updatedMessage = this.buildUpdatedTextPayload(currentMessage?.message, text);
+        const response = await this.invoke<Record<string, any>>(
+          "bale.messaging.v2.Messaging",
+          "UpdateMessage",
+          "request.UpdateMessage",
+          "response.DefaultResponse",
+          {
+            peer,
+            rid: parsedMessageId.rid,
+            updated_message: updatedMessage,
+          },
+        );
+
+        return wrapDefaultResponse(response);
+      } catch (error) {
+        lastError = error;
+        if (attempt >= 3) {
+          break;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 120 * (attempt + 1)));
+      }
     }
 
-    currentMessage.message.text_message.text = text;
-    const response = await this.invoke<Record<string, any>>(
-      "bale.messaging.v2.Messaging",
-      "UpdateMessage",
-      "request.UpdateMessage",
-      "response.DefaultResponse",
-      {
-        peer,
-        rid: parsedMessageId.rid,
-        updated_message: currentMessage.message,
-      },
-    );
+    throw lastError;
+  }
 
-    return wrapDefaultResponse(response);
+  async edit_message(chatId: string, messageId: string, text: string): Promise<DefaultResponse> {
+    return await this.edit_message_text(chatId, messageId, text);
   }
 
   async forward_message(chatId: string, fromChatId: string, messageId: string): Promise<DefaultResponse> {
@@ -1477,6 +1590,14 @@ export class Client {
 
   async get_my_kifpools(): Promise<WalletResponse> {
     return await this.get_wallet();
+  }
+
+  async prime_wallet_cache(): Promise<WalletResponse | undefined> {
+    try {
+      return await this.get_wallet();
+    } catch {
+      return undefined;
+    }
   }
 
   async send_gift(
@@ -1579,6 +1700,19 @@ export class Client {
 
   async open_packet(message: Message, receiverToken?: string): Promise<PacketResponse> {
     return await this.open_gift(message, receiverToken);
+  }
+
+  async upvote_post(message: Message, albumId?: number): Promise<Record<string, any>> {
+    return await this.invoke<Record<string, any>>(
+      "bale.magazine.v1.Magazine",
+      "UpvotePost",
+      "request.UpvotePost",
+      "response.UpvoteResponse",
+      {
+        message: this.ensureInfoMessage(message),
+        album_id: albumId == null ? undefined : { value: albumId },
+      },
+    );
   }
 
   async report_chat(
@@ -1798,6 +1932,35 @@ export class Client {
     const history = await this.loadHistory(peer, messageId.date, 20);
     const items = Array.isArray(history.history) ? history.history : [];
     return items.find((item) => String(item.rid) === messageId.rid);
+  }
+
+  private toInfoMessage(message: Message): { peer: { id: number; type: number }; message_id: string; date: number } {
+    return {
+      peer: this.requirePeer(message.chat),
+      message_id: String(message.message_id),
+      date: message.date,
+    };
+  }
+
+  private buildUpdatedTextPayload(message: Record<string, any> | undefined, text: string): Record<string, any> {
+    if (message?.document_message) {
+      return {
+        ...message,
+        document_message: {
+          ...message.document_message,
+          caption: {
+            ...(message.document_message.caption ?? {}),
+            text,
+          },
+        },
+      };
+    }
+
+    return {
+      text_message: {
+        text,
+      },
+    };
   }
 
   private requirePeer(chatId: string | Chat): { id: number; type: number } {
@@ -2022,10 +2185,34 @@ export class Client {
   }
 
   private getSessionPath(): string {
-    return path.join(this.sessionDir, `${this.token_or_phone_number}.session`);
+    return path.join(this.sessionDir, `${this.sessionName}.session`);
   }
 
-  private async handleUpdate(update: Record<string, unknown>): Promise<void> {
+  private enqueueUpdate(update: Record<string, unknown>): void {
+    this.pendingUpdates.push(update);
+    this.drainUpdateQueue();
+  }
+
+  private drainUpdateQueue(): void {
+    while (this.activeUpdateTasks < this.updateConcurrency && this.pendingUpdates.length > 0) {
+      const nextUpdate = this.pendingUpdates.shift();
+      if (!nextUpdate) {
+        return;
+      }
+
+      this.activeUpdateTasks += 1;
+      void this.processUpdate(nextUpdate)
+        .catch(async (error) => {
+          await this.dispatcher.dispatchError(this, error);
+        })
+        .finally(() => {
+          this.activeUpdateTasks -= 1;
+          this.drainUpdateQueue();
+        });
+    }
+  }
+
+  private async processUpdate(update: Record<string, unknown>): Promise<void> {
     const rawMessage = (update.update as Record<string, any> | undefined)?.composed_update?.message;
     if (!rawMessage || Number(rawMessage.rid) === 0) {
       return;

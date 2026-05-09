@@ -65,9 +65,22 @@ Fields:
 
 Methods:
 
+- `answer(text)`
 - `reply(text)`
 - `edit_text(text)`
-- `delete()`
+- `delete(just_me?)`
+- `seen()`
+- `clear_chat()`
+- `delete_chat()`
+- `load_history(limit?, fromDate?)`
+- `pin(just_mine?)`
+- `unpin()`
+- `unpin_all()`
+- `pin_in_group()`
+- `unpin_in_group()`
+- `unpin_all_in_group()`
+- `load_pinned_messages()`
+- `load_full_chat()`
 - `forward(chatId)`
 - `copy(chatId)`
 - `open_gift(receiverToken?)`
@@ -84,6 +97,7 @@ Notes:
 ```
 
 - `content` returns `text ?? caption ?? ""`
+- `reply(text)` sends an actual Bale reply reference; use `answer(text)` for a plain send in the same chat
 
 ## `GiftPacket`
 

@@ -18,6 +18,7 @@ const client = new Client(auth, options);
 `options`:
 
 - `sessionDir?: string`
+- `sessionName?: string`
 - `grpc?: GrpcConnectionOptions`
 - `websocket?: WebSocketConnectionOptions`
 

@@ -274,14 +274,7 @@ export class BaleWebSocketConnection extends EventEmitter {
 
   private async handleIncoming(data: RawData): Promise<void> {
     const payload = rawDataToBuffer(data);
-
-    let response: Record<string, unknown>;
-    try {
-      response = decodeMessage<Record<string, unknown>>("response.Response", payload);
-    } catch (decodeError) {
-      this.emit("warning", decodeError);
-      return;
-    }
+    const response = decodeMessage<Record<string, unknown>>("response.Response", payload);
 
     if (response.ws_update) {
       this.emit("update", response.ws_update);

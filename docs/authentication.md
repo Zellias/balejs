@@ -59,6 +59,21 @@ Successful authentication writes a session file here:
 
 By default `sessionDir` is the current working directory.
 
+If you want a stable custom filename, pass `sessionName` in the client options:
+
+```js
+const client = new Client(process.env.BALE_PHONE, {
+  sessionDir: "./sessions",
+  sessionName: "main-account",
+});
+```
+
+That writes the session to:
+
+```text
+./sessions/main-account.session
+```
+
 ## Public Auth Methods
 
 - `start_phone_auth(phoneNumber)`
